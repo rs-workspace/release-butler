@@ -92,9 +92,7 @@ pub async fn parse_event(
         return HttpResponse::InternalServerError();
     };
 
-    info!("Got Webhook Event {:#?}", event);
-
-    match event {
+    match event.kind {
         // TODO
         _ => {
             info!("Got an unsupported event: {:?}", event)

@@ -1,3 +1,5 @@
+#[cfg(feature = "tests")]
+pub mod tests_utils;
 pub mod webhook;
 
 pub struct State {

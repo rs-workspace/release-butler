@@ -4,10 +4,14 @@ version = "0.0.1"
 edition = "2021"
 authors = ["Aditya Kumar <git@adityais.dev>"]
 
+[features]
+tests = ["dep:actix-http"]
+
 [dependencies]
 octocrab = "0.43"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 actix-web = "4"
+actix-http = { version = "3.9", optional = true }
 shuttle-actix-web = "0.52"
 shuttle-runtime = "0.52"
 tracing = "0.1"
