@@ -6,7 +6,9 @@ use actix_web::{
 use base64ct::Encoding;
 use hmac::{Hmac, Mac};
 use octocrab::models::Event;
-use tracing::{debug, error, info};
+use tracing::{error, info};
+
+use crate::State;
 
 // The Webhook Payload size limit is 25MB
 pub static WEBHOOK_SIZE_LIMIT: usize = 25_000_000; // 25 * 1000 * 1000
@@ -16,7 +18,11 @@ pub type HmacSha256 = Hmac<sha2::Sha256>;
 pub struct GitHubSignature256(pub Box<str>);
 
 #[post("/github/webhook/")]
-pub async fn parse_event(req: HttpRequest, body: web::Payload) -> impl Responder {
+pub async fn parse_event(
+    req: HttpRequest,
+    body: web::Payload,
+    state: web::Data<State>,
+) -> impl Responder {
     let headers = req.headers();
     let Some(github_signature_256) = headers.get("X-Hub-Signature-256") else {
         error!("The request on `/github/webhook` didn't contained `X-Hub-Signature-256` header. Complete Response -> {:?}", req);
@@ -39,15 +45,13 @@ pub async fn parse_event(req: HttpRequest, body: web::Payload) -> impl Responder
         }
     };
 
-    if body.len() == 0 {
+    if body.is_empty() {
+        info!("Got empty payload, ignoring the request");
         return HttpResponse::InternalServerError();
     }
 
-    let mut hasher = HmacSha256::new_from_slice(
-        std::env::var("RELEASE-BUTLER-SECRET")
-            .expect("Please provide env variable, `RELEASE-BUTLER-SECRET` which contains GitHub Webhook Secret.")
-            .as_bytes()
-    ).expect("Failed to create Hasher");
+    let mut hasher = HmacSha256::new_from_slice(state.webhook_secret.as_bytes())
+        .expect("Failed to create Hasher");
     hasher.update(&body);
 
     let mut enc_buf = [0u8; 256];
@@ -67,7 +71,7 @@ pub async fn parse_event(req: HttpRequest, body: web::Payload) -> impl Responder
         return HttpResponse::InternalServerError();
     };
 
-    debug!("Got Webhook Event {:#?}", event);
+    info!("Got Webhook Event {:#?}", event);
 
     match event {
         // TODO
