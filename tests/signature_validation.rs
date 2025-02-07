@@ -1,4 +1,5 @@
-use release_butler::tests_utils;
+use actix_web::http::StatusCode;
+use release_butler::{tests_utils, webhook::WebhookError};
 
 #[actix_web::test]
 async fn test_empty_signature_header() {
@@ -6,7 +7,11 @@ async fn test_empty_signature_header() {
         .uri(tests_utils::WEBHOOK_ENDPOINT)
         .to_request();
     let resp = tests_utils::test_endpoint(req).await;
-    assert!(resp.status().is_client_error())
+
+    assert_eq!(resp.status(), StatusCode::NOT_ACCEPTABLE);
+
+    let body = tests_utils::test::read_body(resp).await;
+    assert_eq!(body, WebhookError::RequiredHeadersNotAvailable.to_bytes());
 }
 
 #[actix_web::test]
@@ -15,7 +20,11 @@ async fn test_empty_github_event_header() {
         .uri(tests_utils::WEBHOOK_ENDPOINT)
         .to_request();
     let resp = tests_utils::test_endpoint(req).await;
-    assert!(resp.status().is_client_error())
+
+    assert_eq!(resp.status(), StatusCode::NOT_ACCEPTABLE);
+
+    let body = tests_utils::test::read_body(resp).await;
+    assert_eq!(body, WebhookError::RequiredHeadersNotAvailable.to_bytes());
 }
 
 #[actix_web::test]
@@ -34,7 +43,10 @@ async fn test_signature_validation() {
         .insert_header(signature_header)
         .insert_header(event_header)
         .to_request();
-
     let resp = tests_utils::test_endpoint(req).await;
-    assert!(resp.status().is_client_error()) // Because this will fail to serialize
+
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = tests_utils::test::read_body(resp).await;
+    assert_eq!(body, WebhookError::SerializationFailed.to_bytes());
 }

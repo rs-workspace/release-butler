@@ -1,18 +1,63 @@
+use crate::State;
 use actix_web::{
+    http::{header::ContentType, StatusCode},
     post,
     web::{self, Bytes},
-    HttpRequest, HttpResponse, Responder,
+    HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
+use derive_more::{Display, Error};
 use hmac::{Hmac, Mac};
 use octocrab::models::webhook_events::WebhookEvent;
 use tracing::{error, info};
-
-use crate::State;
 
 // The Webhook Payload size limit is 25MB
 pub static WEBHOOK_SIZE_LIMIT: usize = 25_000_000; // 25 * 1000 * 1000
 
 pub type HmacSha256 = Hmac<sha2::Sha256>;
+
+#[derive(Debug, Display, Error, Clone, Copy)]
+pub enum WebhookError {
+    #[display("Not all the required headers are available")]
+    RequiredHeadersNotAvailable,
+    #[display("Body size greater than WEBHOOK_SIZE_LIMIT i.e. 25MB")]
+    LargeBodySize,
+    #[display("Empty body/payload")]
+    EmptyBody,
+    #[display("Signature in X-Hub-Signature-256 and computed from payload didn't matched")]
+    InvalidSignature,
+    #[display("Failed to serialize the payload")]
+    SerializationFailed,
+    #[display("Got an unsupported webhook event")]
+    UnsupportedEvent,
+    #[display("Invalid Encoding or length when computing sha256 signature")]
+    InvalidEncodingOrLength,
+}
+
+impl WebhookError {
+    pub fn to_bytes(self) -> web::Bytes {
+        web::Bytes::from(self.to_string())
+    }
+}
+
+impl ResponseError for WebhookError {
+    fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
+        HttpResponse::build(self.status_code())
+            .content_type(ContentType::plaintext())
+            .body(self.to_string())
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match self {
+            WebhookError::RequiredHeadersNotAvailable => StatusCode::NOT_ACCEPTABLE,
+            WebhookError::LargeBodySize => StatusCode::PAYLOAD_TOO_LARGE,
+            WebhookError::EmptyBody => StatusCode::BAD_REQUEST,
+            WebhookError::InvalidSignature => StatusCode::UNAUTHORIZED,
+            WebhookError::SerializationFailed => StatusCode::INTERNAL_SERVER_ERROR,
+            WebhookError::UnsupportedEvent => StatusCode::NOT_IMPLEMENTED,
+            WebhookError::InvalidEncodingOrLength => StatusCode::BAD_REQUEST,
+        }
+    }
+}
 
 pub struct GitHubSignature256(pub Box<str>);
 
@@ -21,7 +66,7 @@ pub async fn parse_event(
     req: HttpRequest,
     body: web::Payload,
     state: web::Data<State>,
-) -> impl Responder {
+) -> Result<HttpResponse, WebhookError> {
     let headers = req.headers();
 
     let github_signature_256 = match headers.get("X-Hub-Signature-256") {
@@ -48,12 +93,12 @@ pub async fn parse_event(
 
     if github_signature_256.is_empty() || github_event.is_empty() {
         error!("Either the header `X-Hub-Signature-256` or `X-GitHub-Event` was empty or one of them failed to parse");
-        return HttpResponse::BadRequest();
+        return Err(WebhookError::RequiredHeadersNotAvailable);
     }
 
     let Ok(body) = body.to_bytes_limited(WEBHOOK_SIZE_LIMIT).await else {
         error!("Body size is greater than 25MB.");
-        return HttpResponse::InternalServerError();
+        return Err(WebhookError::LargeBodySize);
     };
 
     let body = match body {
@@ -66,7 +111,7 @@ pub async fn parse_event(
 
     if body.is_empty() {
         info!("Got empty payload, ignoring the request");
-        return HttpResponse::InternalServerError();
+        return Err(WebhookError::EmptyBody);
     }
 
     let mut hasher = HmacSha256::new_from_slice(state.webhook_secret.as_bytes())
@@ -78,26 +123,27 @@ pub async fn parse_event(
         base16ct::lower::encode_str(&hasher.finalize().into_bytes(), &mut enc_buf)
     else {
         error!("hmm! InvalidLengthError Insufficient output buffer length.");
-        return HttpResponse::InternalServerError();
+        return Err(WebhookError::InvalidEncodingOrLength);
     };
     let signature_256 = format!("sha256={}", signature_256);
 
     if github_signature_256.as_bytes() != signature_256.as_bytes() {
         error!("Invalid Signature. This is not a valid webhook event send by GitHub. Our signature = {}, header signature = {}", signature_256, github_signature_256);
-        return HttpResponse::BadRequest();
+        return Err(WebhookError::InvalidSignature);
     }
     // Great, go ahead now it's verified that this is send from GitHub
     let Ok(event) = WebhookEvent::try_from_header_and_body(github_event, &body) else {
         error!("Failed to serialize webhook payload. body => {:?}", body);
-        return HttpResponse::InternalServerError();
+        return Err(WebhookError::SerializationFailed);
     };
 
     match event.kind {
         // TODO
         _ => {
-            info!("Got an unsupported event: {:?}", event)
+            info!("Got an unsupported event: {:?}", event);
+            return Err(WebhookError::UnsupportedEvent);
         }
     }
 
-    HttpResponse::Ok()
+    Ok(HttpResponseBuilder::new(StatusCode::OK).finish())
 }

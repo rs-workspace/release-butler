@@ -7,18 +7,14 @@ use crate::State;
 use actix_http::{header::TryIntoHeaderPair, Request};
 pub use actix_web::test;
 use actix_web::{dev::ServiceResponse, error::HttpError, web::Data, App};
-use std::sync::LazyLock;
 
-pub static WEBHOOK_ENDPOINT: &str = "/github/webhook";
-pub static APP_STATE: LazyLock<State> = LazyLock::new(|| State {
-    webhook_secret: String::from("abc"),
-});
+pub static WEBHOOK_ENDPOINT: &str = "/github/webhook/";
 
 #[derive(Debug, Clone)]
 pub struct HeaderConversionError;
 
-impl Into<HttpError> for HeaderConversionError {
-    fn into(self) -> HttpError {
+impl From<HeaderConversionError> for HttpError {
+    fn from(_val: HeaderConversionError) -> HttpError {
         todo!()
     }
 }
@@ -48,11 +44,9 @@ impl TryIntoHeaderPair for TestHeader {
 }
 
 pub async fn test_endpoint(req: Request) -> ServiceResponse {
-    let app = test::init_service(
-        App::new()
-            .service(parse_event)
-            .app_data(Data::new(&APP_STATE)),
-    )
+    let app = test::init_service(App::new().service(parse_event).app_data(Data::new(State {
+        webhook_secret: String::from("abc"),
+    })))
     .await;
     test::call_service(&app, req).await
 }
