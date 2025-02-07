@@ -3,7 +3,6 @@ use actix_web::{
     web::{self, Bytes},
     HttpRequest, HttpResponse, Responder,
 };
-use base64ct::Encoding;
 use hmac::{Hmac, Mac};
 use octocrab::models::Event;
 use tracing::{error, info};
@@ -25,15 +24,16 @@ pub async fn parse_event(
 ) -> impl Responder {
     let headers = req.headers();
     let Some(github_signature_256) = headers.get("X-Hub-Signature-256") else {
-        error!("The request on `/github/webhook` didn't contained `X-Hub-Signature-256` header. Complete Response -> {:?}", req);
+        error!("The request on `/github/webhook` didn't contained `X-Hub-Signature-256` header. Request -> {:?}", req);
         return HttpResponse::BadRequest();
+    };
+    let Ok(github_signature_256) = github_signature_256.to_str() else {
+        error!("Failed to convert value of `X-Hub-Signature-256` header");
+        return HttpResponse::InternalServerError();
     };
 
     let Ok(body) = body.to_bytes_limited(WEBHOOK_SIZE_LIMIT).await else {
-        error!(
-            "Body size is greater than 25MB. Complete Response -> {:?}",
-            req
-        );
+        error!("Body size is greater than 25MB.");
         return HttpResponse::InternalServerError();
     };
 
@@ -55,14 +55,16 @@ pub async fn parse_event(
     hasher.update(&body);
 
     let mut enc_buf = [0u8; 256];
-    let Ok(signature_256) = base64ct::Base64::encode(&hasher.finalize().into_bytes(), &mut enc_buf)
+    let Ok(signature_256) =
+        base16ct::lower::encode_str(&hasher.finalize().into_bytes(), &mut enc_buf)
     else {
         error!("hmm! InvalidLengthError Insufficient output buffer length.");
         return HttpResponse::InternalServerError();
     };
+    let signature_256 = format!("sha256={}", signature_256);
 
     if github_signature_256.as_bytes() != signature_256.as_bytes() {
-        error!("Invalid Signature. This is not a valid webhook event send by GitHub");
+        error!("Invalid Signature. This is not a valid webhook event send by GitHub. \nOur signature = {}, header signature = {}", signature_256, github_signature_256);
         return HttpResponse::BadRequest();
     }
     // Great, go ahead now it's verified that this is send from GitHub
