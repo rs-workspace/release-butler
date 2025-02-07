@@ -4,7 +4,7 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder,
 };
 use hmac::{Hmac, Mac};
-use octocrab::models::Event;
+use octocrab::models::webhook_events::WebhookEvent;
 use tracing::{error, info};
 
 use crate::State;
@@ -23,14 +23,33 @@ pub async fn parse_event(
     state: web::Data<State>,
 ) -> impl Responder {
     let headers = req.headers();
-    let Some(github_signature_256) = headers.get("X-Hub-Signature-256") else {
-        error!("The request on `/github/webhook` didn't contained `X-Hub-Signature-256` header. Request -> {:?}", req);
+
+    let github_signature_256 = match headers.get("X-Hub-Signature-256") {
+        Some(value) => {
+            let value = value.to_str().unwrap_or("");
+            value
+        }
+        None => {
+            error!("The request on `/github/webhook` didn't contained `X-Hub-Signature-256` header. Request -> {:?}", req);
+            ""
+        }
+    };
+
+    let github_event = match headers.get("X-GitHub-Event") {
+        Some(value) => {
+            let value = value.to_str().unwrap_or("");
+            value
+        }
+        None => {
+            error!("Failed to convert value of `X-GitHub-Event` header into str");
+            ""
+        }
+    };
+
+    if github_signature_256.is_empty() || github_event.is_empty() {
+        error!("Either the header `X-Hub-Signature-256` or `X-GitHub-Event` was empty or one of them failed to parse");
         return HttpResponse::BadRequest();
-    };
-    let Ok(github_signature_256) = github_signature_256.to_str() else {
-        error!("Failed to convert value of `X-Hub-Signature-256` header");
-        return HttpResponse::InternalServerError();
-    };
+    }
 
     let Ok(body) = body.to_bytes_limited(WEBHOOK_SIZE_LIMIT).await else {
         error!("Body size is greater than 25MB.");
@@ -64,12 +83,12 @@ pub async fn parse_event(
     let signature_256 = format!("sha256={}", signature_256);
 
     if github_signature_256.as_bytes() != signature_256.as_bytes() {
-        error!("Invalid Signature. This is not a valid webhook event send by GitHub. \nOur signature = {}, header signature = {}", signature_256, github_signature_256);
+        error!("Invalid Signature. This is not a valid webhook event send by GitHub. Our signature = {}, header signature = {}", signature_256, github_signature_256);
         return HttpResponse::BadRequest();
     }
     // Great, go ahead now it's verified that this is send from GitHub
-    let Ok(event) = serde_json::from_slice::<Event>(&body) else {
-        error!("Failed to serialize body");
+    let Ok(event) = WebhookEvent::try_from_header_and_body(github_event, &body) else {
+        error!("Failed to serialize webhook payload. body => {:?}", body);
         return HttpResponse::InternalServerError();
     };
 
