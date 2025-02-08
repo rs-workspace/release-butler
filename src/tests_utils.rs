@@ -40,7 +40,7 @@ where
         Self::Error,
     > {
         let header_name = actix_http::header::HeaderName::from_static(self.0);
-        let header_value = actix_http::header::HeaderValue::from_str(&self.1.as_ref());
+        let header_value = actix_http::header::HeaderValue::from_str(self.1.as_ref());
 
         match header_value {
             Ok(value) => Ok((header_name, value)),
@@ -81,6 +81,40 @@ pub mod payload_template {
         let mut sha_hex = String::from("sha256=");
         sha_hex.push_str(
             &generate_hmac_sha256_hex(GITHUB_PUSH, DEFAULT_HMAC_KEY.as_bytes()).unwrap_or_default(),
+        );
+        sha_hex
+    });
+
+    pub static GITHUB_FORK: &[u8] = include_str!("../tests_payload/github_fork.json").as_bytes();
+
+    pub static GITHUB_FORK_HEX: LazyLock<String> = LazyLock::new(|| {
+        let mut sha_hex = String::from("sha256=");
+        sha_hex.push_str(
+            &generate_hmac_sha256_hex(GITHUB_FORK, DEFAULT_HMAC_KEY.as_bytes()).unwrap_or_default(),
+        );
+        sha_hex
+    });
+
+    pub static GITHUB_ISSUES: &[u8] =
+        include_str!("../tests_payload/github_issues.json").as_bytes();
+
+    pub static GITHUB_ISSUES_HEX: LazyLock<String> = LazyLock::new(|| {
+        let mut sha_hex = String::from("sha256=");
+        sha_hex.push_str(
+            &generate_hmac_sha256_hex(GITHUB_ISSUES, DEFAULT_HMAC_KEY.as_bytes())
+                .unwrap_or_default(),
+        );
+        sha_hex
+    });
+
+    pub static GITHUB_INVALID_ISSUES_PAYLOAD: &[u8] =
+        include_str!("../tests_payload/github_invalid_issues_payload.json").as_bytes();
+
+    pub static GITHUB_INVALID_ISSUES_PAYLOAD_HEX: LazyLock<String> = LazyLock::new(|| {
+        let mut sha_hex = String::from("sha256=");
+        sha_hex.push_str(
+            &generate_hmac_sha256_hex(GITHUB_INVALID_ISSUES_PAYLOAD, DEFAULT_HMAC_KEY.as_bytes())
+                .unwrap_or_default(),
         );
         sha_hex
     });

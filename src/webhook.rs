@@ -1,5 +1,6 @@
 use crate::{
     common::generate_hmac_sha256_hex,
+    events::{self, Handler},
     State,
 };
 use actix_web::{
@@ -131,11 +132,11 @@ pub async fn parse_event(
         return Err(WebhookError::SerializationFailed);
     };
 
-    match event.kind {
-        // TODO
+    match &event.kind {
+        WebhookEventType::Issues => events::issues::IssuesHandler::new(event, &state).execute(),
         _ => {
             info!("Got an unsupported event: {:?}", event);
-            return Err(WebhookError::UnsupportedEvent);
+            Err(WebhookError::UnsupportedEvent)
         }
     }
 }

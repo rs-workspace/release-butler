@@ -1,4 +1,5 @@
 pub mod common;
+pub mod events;
 #[cfg(feature = "tests")]
 pub mod tests_utils;
 pub mod webhook;
