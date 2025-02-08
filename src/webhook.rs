@@ -15,16 +15,14 @@ use tracing::{error, info};
 // The Webhook Payload size limit is 25MB
 pub static WEBHOOK_SIZE_LIMIT: usize = 25_000_000; // 25 * 1000 * 1000
 
-pub type HmacSha256 = Hmac<sha2::Sha256>;
-
-#[derive(Debug, Display, Error, Clone, Copy)]
+#[derive(Debug, Display, Error, Clone)]
 pub enum WebhookError {
     #[display("Not all the required headers are available")]
     RequiredHeadersNotAvailable,
     #[display("Body size greater than WEBHOOK_SIZE_LIMIT i.e. 25MB")]
     LargeBodySize,
-    #[display("Empty body/payload")]
-    EmptyBody,
+    #[display("The format of body/payload is incorrect. {msg}")]
+    MalformatedBody { msg: String },
     #[display("Signature in X-Hub-Signature-256 and computed from payload didn't matched")]
     InvalidSignature,
     #[display("Failed to serialize the payload")]
@@ -52,16 +50,14 @@ impl ResponseError for WebhookError {
         match self {
             WebhookError::RequiredHeadersNotAvailable => StatusCode::NOT_ACCEPTABLE,
             WebhookError::LargeBodySize => StatusCode::PAYLOAD_TOO_LARGE,
-            WebhookError::EmptyBody => StatusCode::BAD_REQUEST,
+            WebhookError::MalformatedBody { .. } => StatusCode::BAD_REQUEST,
             WebhookError::InvalidSignature => StatusCode::UNAUTHORIZED,
             WebhookError::SerializationFailed => StatusCode::INTERNAL_SERVER_ERROR,
-            WebhookError::UnsupportedEvent => StatusCode::NOT_IMPLEMENTED,
+            WebhookError::UnsupportedEvent { .. } => StatusCode::NOT_IMPLEMENTED,
             WebhookError::InvalidEncodingOrLength => StatusCode::BAD_REQUEST,
         }
     }
 }
-
-pub struct GitHubSignature256(pub Box<str>);
 
 #[post("/github/webhook/")]
 pub async fn parse_event(
