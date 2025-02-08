@@ -36,7 +36,7 @@ impl State {
 
         Self {
             webhook_secret,
-            app_username,
+            app_username: format!("app/{}", app_username),
             app_id,
             key,
             gh,

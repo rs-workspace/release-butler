@@ -12,7 +12,10 @@ use actix_web::{
 };
 use derive_more::{Display, Error};
 use octocrab::{
-    models::webhook_events::{EventInstallation, WebhookEvent, WebhookEventType},
+    models::{
+        repos::ContentItems,
+        webhook_events::{EventInstallation, WebhookEvent, WebhookEventType},
+    },
     Octocrab,
 };
 use tracing::{error, info};
@@ -211,15 +214,24 @@ pub async fn get_config(
         .send()
         .await
     {
-        Ok(content) => content,
-        Err(err) => {
-            error!(
-                "Failed to get reponse from github api when trying to find `{}`. Error: {:?}",
-                DEFAULT_CONFIG_FILE_PATH, err
-            );
-            return None;
-        }
-    };
+        Ok(content) => Some(content),
+        Err(err) => match err {
+            octocrab::Error::GitHub { source, .. } => {
+                if source.status_code.as_u16() == 404 {
+                    Some(ContentItems { items: Vec::new() })
+                } else {
+                    None
+                }
+            }
+            _ => {
+                error!(
+                    "Failed to get reponse from github api when trying to find `{}`. Error: {:?}",
+                    DEFAULT_CONFIG_FILE_PATH, err
+                );
+                None
+            }
+        },
+    }?;
 
     let mut config_file = String::new();
     for file in config_files.items {
@@ -264,8 +276,8 @@ pub async fn get_config(
                 .create(format!("`{}` file is malformatted", DEFAULT_CONFIG_FILE_PATH))
                 .body(
                     format!(
-                        "Hi there, I just a webhook event for this repository and I failed to get information from `{}`.\n
-                        It is possible that this file doesn't exists or there is an issue with it. Please fix it as it will allow me to work smoothly.\n\n
+                        "Hi there, I just a webhook event for this repository and I failed to get information from `{}`.\n\
+                        It is possible that this file doesn't exists or there is an issue with it. Please fix it as it will allow me to work smoothly.\n\n\
                         For more information refer https://github.com/rs-workspace/release-butler\nSample File https://github.com/rs-workspace/release-butler/blob/main/repository.template.toml",
                         DEFAULT_CONFIG_FILE_PATH
                     )
