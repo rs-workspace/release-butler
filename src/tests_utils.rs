@@ -50,9 +50,11 @@ where
 }
 
 pub async fn test_endpoint(req: Request) -> ServiceResponse {
-    let app = test::init_service(App::new().service(parse_event).app_data(Data::new(State {
-        webhook_secret: String::from(DEFAULT_HMAC_KEY),
-    })))
+    let app = test::init_service(
+        App::new()
+            .service(parse_event)
+            .app_data(Data::new(State::new_basic(String::from(DEFAULT_HMAC_KEY)))),
+    )
     .await;
     test::call_service(&app, req).await
 }

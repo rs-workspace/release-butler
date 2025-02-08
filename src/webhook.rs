@@ -1,7 +1,8 @@
 use crate::{
     common::generate_hmac_sha256_hex,
+    config::Config,
     events::{self, Handler},
-    State,
+    State, DEFAULT_CONFIG_FILE_PATH,
 };
 use actix_web::{
     http::{header::ContentType, StatusCode},
@@ -132,11 +133,118 @@ pub async fn parse_event(
         return Err(WebhookError::SerializationFailed);
     };
 
+    let Some(repository) = &event.repository else {
+        error!("The payload didn't contains Repository Information. Ignoring the event.");
+        return Err(WebhookError::MalformatedBody {
+            msg: String::from("Repository Information is required"),
+        });
+    };
+
+    let Some(repository) = &repository.full_name else {
+        error!("The payload didn't contains repository full name. Ignoring the event.");
+        return Err(WebhookError::MalformatedBody {
+            msg: String::from("Repository Full Name is required"),
+        });
+    };
+
+    let repository: Vec<&str> = repository.split("/").collect();
+    let (repo_owner, repo) = (repository[0], repository[1]);
+
     match &event.kind {
-        WebhookEventType::Issues => events::issues::IssuesHandler::new(event, &state).execute(),
+        WebhookEventType::Issues => {
+            let Some(config) = get_config(repo_owner, repo, &state).await else {
+                return Ok(HttpResponse::Ok().finish());
+            };
+            events::issues::IssuesHandler::new(&event, config, &state).execute()
+        }
         _ => {
             info!("Got an unsupported event: {:?}", event);
             Err(WebhookError::UnsupportedEvent)
         }
     }
+}
+
+pub async fn get_config(repo_owner: &str, repo: &str, state: &State) -> Option<Config> {
+    let repos_handle = state.gh.repos(repo_owner, repo);
+
+    let config_files = match repos_handle
+        .get_content()
+        .path(DEFAULT_CONFIG_FILE_PATH)
+        .send()
+        .await
+    {
+        Ok(content) => content,
+        Err(err) => {
+            error!(
+                "Failed to get reponse from github api when trying to find `{}`. Error: {:?}",
+                DEFAULT_CONFIG_FILE_PATH, err
+            );
+            return None;
+        }
+    };
+
+    let mut config_file = String::new();
+    for file in config_files.items {
+        if file.path.as_str() != DEFAULT_CONFIG_FILE_PATH {
+            continue;
+        }
+
+        if let Some(file_content) = file.decoded_content() {
+            config_file.push_str(&file_content);
+        }
+    }
+
+    let Ok(config) = toml::from_str::<Config>(&config_file) else {
+        error!("Failed to parse configuration file. Posting error as an issue if not exists...");
+
+        let issues = state.gh.issues(repo_owner, repo);
+
+        // Check if issue already exists or not with label `$CONFIG_ISSUE_LABEL`
+        let Ok(issues_list) = issues
+            .list()
+            .creator(&state.app_username)
+            .labels(&[String::from(crate::CONFIG_ISSUE_LABEL)])
+            .send()
+            .await
+        else {
+            error!(
+                "Failed to get information if issue with label {} by user {} was created or not.",
+                crate::CONFIG_ISSUE_LABEL,
+                state.app_username
+            );
+            return None;
+        };
+
+        if issues_list.items.is_empty() {
+            info!(
+                "There is no issue created with label {} by user {}, creating one...",
+                crate::CONFIG_ISSUE_LABEL,
+                state.app_username
+            );
+
+            match issues
+                .create(format!("`{}` file is malformatted", DEFAULT_CONFIG_FILE_PATH))
+                .body(
+                    format!(
+                        "Hi there, I just a webhook event for this repository and I failed to get information from `{}`.\n
+                        It is possible that this file doesn't exists or there is an issue with it. Please fix it as it will allow me to work smoothly.\n\n
+                        For more information refer https://github.com/rs-workspace/release-butler\nSample File https://github.com/rs-workspace/release-butler/blob/main/repository.template.toml",
+                        DEFAULT_CONFIG_FILE_PATH
+                    )
+                )
+                .labels(vec![String::from(crate::CONFIG_ISSUE_LABEL)])
+                .send().await {
+                    Ok(_) => {
+                        info!("Created an issue highlighting problem with {} in {}/{}", DEFAULT_CONFIG_FILE_PATH, repo_owner, repo);
+                    },
+                    Err(err) => {
+                        error!("Failed to create issue. Error: {:?}", err)
+                    }
+                }
+        }
+
+        return None;
+    };
+
+    Some(config)
 }
