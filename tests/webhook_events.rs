@@ -63,7 +63,7 @@ async fn test_empty_repository_information() {
 
     let resp = test_endpoint(req).await;
 
-    // assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     let body = test::read_body(resp).await;
     assert_eq!(
