@@ -11,7 +11,10 @@ use actix_web::{
     HttpRequest, HttpResponse, ResponseError,
 };
 use derive_more::{Display, Error};
-use octocrab::models::webhook_events::{WebhookEvent, WebhookEventType};
+use octocrab::{
+    models::webhook_events::{EventInstallation, WebhookEvent, WebhookEventType},
+    Octocrab,
+};
 use tracing::{error, info};
 
 // The Webhook Payload size limit is 25MB
@@ -152,10 +155,11 @@ pub async fn parse_event(
 
     match &event.kind {
         WebhookEventType::Issues => {
-            let Some(config) = get_config(repo_owner, repo, &state).await else {
+            let gh = generate_gh_from_event(&event, &state.gh)?;
+            let Some(config) = get_config(repo_owner, repo, &state, &gh).await else {
                 return Ok(HttpResponse::Ok().finish());
             };
-            events::issues::IssuesHandler::new(&event, config, &state).execute()
+            events::issues::IssuesHandler::new(&event, config, &state, gh).execute()
         }
         _ => {
             info!("Got an unsupported event: {:?}", event);
@@ -164,8 +168,42 @@ pub async fn parse_event(
     }
 }
 
-pub async fn get_config(repo_owner: &str, repo: &str, state: &State) -> Option<Config> {
-    let repos_handle = state.gh.repos(repo_owner, repo);
+pub fn generate_gh_from_event(
+    event: &WebhookEvent,
+    old_gh: &Octocrab,
+) -> Result<Octocrab, WebhookError> {
+    // Use installation provided by the event
+    let Some(event_installation) = &event.installation else {
+        error!("The payload didn't contained installation information. Ignoring Event...");
+        return Err(WebhookError::MalformatedBody {
+            msg: String::from("Installation information is requried."),
+        });
+    };
+
+    // get installation id
+    let installation_id = match event_installation {
+        EventInstallation::Full(full) => full.id,
+        EventInstallation::Minimal(minimal) => minimal.id,
+    };
+
+    old_gh.installation(installation_id).map_err(|err| {
+        error!(
+            "Failed to generate new Octocrab with installation id provided by event. Error: {}",
+            err
+        );
+        WebhookError::MalformatedBody {
+            msg: format!("Failed to new instance of octocrab. Error: {}", err),
+        }
+    })
+}
+
+pub async fn get_config(
+    repo_owner: &str,
+    repo: &str,
+    state: &State,
+    gh: &Octocrab,
+) -> Option<Config> {
+    let repos_handle = gh.repos(repo_owner, repo);
 
     let config_files = match repos_handle
         .get_content()
@@ -197,7 +235,7 @@ pub async fn get_config(repo_owner: &str, repo: &str, state: &State) -> Option<C
     let Ok(config) = toml::from_str::<Config>(&config_file) else {
         error!("Failed to parse configuration file. Posting error as an issue if not exists...");
 
-        let issues = state.gh.issues(repo_owner, repo);
+        let issues = gh.issues(repo_owner, repo);
 
         // Check if issue already exists or not with label `$CONFIG_ISSUE_LABEL`
         let Ok(issues_list) = issues
