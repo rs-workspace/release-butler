@@ -1,0 +1,49 @@
+# Sample Configuration file for release-butler
+
+# Configuration Version
+version = 1
+
+# Default base branch for PR(s)
+default_branch = "main"
+
+[issues_meta_data]
+# Authors that are allowed to open the issue for release
+allowed_authors = ["AS1100K"]
+# Comment which will be commented by the app if unauthorized user has used the label
+# and will remove the label. (Automatically generated, if not provided)
+#
+# unauthorized_author_comment = ""
+#
+# The label on the issue that will be considered. (Default: `release-butler`)
+label = "release-butler"
+
+
+[pr_meta_data]
+# The Prefix that will be used on head branch. (Default: `release-butler`)
+branch_prefix = "release-butler/"
+# When this label is on the PR, the release-butler will hold the PR as it and will
+# not push any further changes until this label is removed
+on_hold_label = "release-butler-hold"
+
+
+# `packages.<PACKAGE_NAME>`, if multiple packages are available then,
+# your issue title must be in `<PACKAGE_NAME>@v0.1.5` where `v0.1.5` can be any semver
+# version
+#
+# Also, `<PACKAGE_NAME>` must be same as specified in package's configuration file.
+# For example: `Cargo.toml` for rust package
+[packages.release-butler]
+# The path to root of the package. This path must be relative to repository root.
+# (Default: `.`)
+path = "."
+# The path to Changelog file for this package. This path must be relative to repository root.
+# (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
+changelog_file = ""
+# The path to changelog file for this package that is designated for pre-release versions. This path must
+# be relative to repository root.
+# (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
+pre_release_changelog_file = ""
+# The package manager used by this package.
+# Supported values:
+# - cargo
+package_manager = "cargo"
