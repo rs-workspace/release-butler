@@ -1,13 +1,15 @@
-use crate::State;
+use crate::{
+    common::generate_hmac_sha256_hex,
+    State,
+};
 use actix_web::{
     http::{header::ContentType, StatusCode},
     post,
     web::{self, Bytes},
-    HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpRequest, HttpResponse, ResponseError,
 };
 use derive_more::{Display, Error};
-use hmac::{Hmac, Mac};
-use octocrab::models::webhook_events::WebhookEvent;
+use octocrab::models::webhook_events::{WebhookEvent, WebhookEventType};
 use tracing::{error, info};
 
 // The Webhook Payload size limit is 25MB
@@ -111,16 +113,12 @@ pub async fn parse_event(
 
     if body.is_empty() {
         info!("Got empty payload, ignoring the request");
-        return Err(WebhookError::EmptyBody);
+        return Err(WebhookError::MalformatedBody {
+            msg: String::from("The payload/body can't be empty"),
+        });
     }
 
-    let mut hasher = HmacSha256::new_from_slice(state.webhook_secret.as_bytes())
-        .expect("Failed to create Hasher");
-    hasher.update(&body);
-
-    let mut enc_buf = [0u8; 256];
-    let Ok(signature_256) =
-        base16ct::lower::encode_str(&hasher.finalize().into_bytes(), &mut enc_buf)
+    let Some(signature_256) = generate_hmac_sha256_hex(&body, state.webhook_secret.as_bytes())
     else {
         error!("hmm! InvalidLengthError Insufficient output buffer length.");
         return Err(WebhookError::InvalidEncodingOrLength);
@@ -144,6 +142,4 @@ pub async fn parse_event(
             return Err(WebhookError::UnsupportedEvent);
         }
     }
-
-    Ok(HttpResponseBuilder::new(StatusCode::OK).finish())
 }
