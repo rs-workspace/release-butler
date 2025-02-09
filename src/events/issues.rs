@@ -3,8 +3,11 @@ use crate::{
     config::PackageManager,
     webhook::{generate_gh_from_event, get_config},
 };
-use octocrab::models::webhook_events::{
-    payload::IssuesWebhookEventAction, WebhookEvent, WebhookEventPayload,
+use octocrab::{
+    models::webhook_events::{
+        payload::IssuesWebhookEventAction, WebhookEvent, WebhookEventPayload,
+    },
+    params::repos::Reference,
 };
 use std::path::PathBuf;
 use tracing::error;
@@ -191,25 +194,28 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 };
 
                 // Modify the files and create a commit
-                let blob = String::new();
                 let repos = gh.repos(self.repository.0, self.repository.1);
                 match package_information.package_manager {
                     PackageManager::Cargo => {
                         let path = PathBuf::from(&package_information.path).join("Cargo.toml");
-                        let Some(path) = path.to_str() else {
+                        let Some(path_str) = path.to_str() else {
                             error!("Failed to convert path to absolute path of `Cargo.toml`");
                             return Ok(HttpResponse::Ok().finish());
                         };
-                        println!("Path is {}", path);
 
-                        let content_items = match repos.get_content().path(path).send().await {
+                        let mut content_items = match repos
+                            .get_content()
+                            .path(path_str)
+                            .send()
+                            .await
+                        {
                             Ok(contents) => contents,
                             Err(err) => {
                                 if let octocrab::Error::GitHub { source, .. } = err {
                                     if source.status_code.as_u16() == 404 {
                                         error!(
                                             "`{}` doesn't exists in {}/{}",
-                                            path, self.repository.0, self.repository.1
+                                            path_str, self.repository.0, self.repository.1
                                         );
                                         if let Err(err) = issues_handler
                                             .create_comment(
@@ -217,7 +223,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                                 format!(
                                                     "Failed to find file with path `{}`. Please make sure the file `Cargo.toml` exists.\n\n\
                                                     If you believe this is a mistake please open a issue at [release-butler](https://github.com/rs-workspace/release-butler)",
-                                                    path
+                                                    path_str
                                                 ),
                                             )
                                             .await
@@ -236,6 +242,72 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                 return Ok(HttpResponse::Ok().finish());
                             }
                         };
+
+                        let cargo_toml_files = content_items.take_items();
+                        for file_ in cargo_toml_files {
+                            if PathBuf::from(&file_.path) != path {
+                                continue;
+                            }
+
+                            let Some(cargo_toml_content) = file_.decoded_content() else {
+                                error!("Failed to decode of `Cargo.toml`");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            let Ok(mut doc) = cargo_toml_content.parse::<toml_edit::DocumentMut>()
+                            else {
+                                error!("Failed to parse `Cargo.toml`");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            // TODO: Make it also work with workspace versions
+                            doc["package"]["version"] = toml_edit::value(version.to_string());
+
+                            let branch = Reference::Branch(format!(
+                                "release-butler/{}@{}",
+                                package, version
+                            ));
+                            if let Err(err) = repos.get_ref(&branch).await {
+                                error!("The branch doesn't exists, creating one... Error: {}", err);
+                                // Get the latest commit in default branch
+                                let Ok(commits) = repos
+                                    .list_commits()
+                                    .branch(config.default_branch)
+                                    .send()
+                                    .await
+                                else {
+                                    error!("Failed to get commit history on default branch");
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+                                let latest_commit_sha = &commits.items[0].sha;
+
+                                // Create the branch
+                                if let Err(err) = repos.create_ref(&branch, latest_commit_sha).await
+                                {
+                                    error!(
+                                        "Failed to find the latest commit on default branch. Error: {}",
+                                        err
+                                    );
+                                    return Ok(HttpResponse::Ok().finish());
+                                }
+
+                                // Create the commit
+                                if let Err(err) = repos
+                                    .update_file(
+                                        path_str,
+                                        "Update Cargo.toml",
+                                        doc.to_string(),
+                                        file_.sha,
+                                    )
+                                    .branch(format!("release-butler/{}@{}", package, version))
+                                    .send()
+                                    .await
+                                {
+                                    error!("Failed to create a commit. Error: {}", err);
+                                    return Ok(HttpResponse::Ok().finish());
+                                }
+                            }
+
+                            break;
+                        }
                     } // TODO: More Package Managers
                 }
             }
