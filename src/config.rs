@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 pub static CONFIG_VERSION: u8 = 1;
 
@@ -39,19 +39,19 @@ pub struct PRMetaData {
 pub struct Package {
     /// The path to root of the package. This path must be relative to repository root.
     ///
-    /// (Default: `.`)
+    /// (Default: ``)
     #[serde(default = "defaults::path")]
-    pub path: PathBuf,
+    pub path: String,
     /// The path to Changelog file for this package. This path must be relative to repository root.
-    #[serde(default = "defaults::empty_path")]
+    #[serde(default = "defaults::path")]
     /// (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
-    pub changelog_file: PathBuf,
+    pub changelog_file: String,
     /// The path to changelog file for this package that is designated for pre-release versions. This path must
     /// be relative to repository root.
     ///
     /// (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
-    #[serde(default = "defaults::empty_path")]
-    pub pre_release_changelog_file: PathBuf,
+    #[serde(default = "defaults::path")]
+    pub pre_release_changelog_file: String,
     /// The package manager used by this package.
     pub package_manager: PackageManager,
 }
@@ -64,8 +64,6 @@ pub enum PackageManager {
 }
 
 mod defaults {
-    use std::path::PathBuf;
-
     pub fn unauthorized_author_comment() -> String {
         format!(
             "Hi, there you can't use the label `{}`, only some designated people are \
@@ -83,12 +81,8 @@ mod defaults {
         String::from("release-butler-hold")
     }
 
-    pub fn path() -> PathBuf {
-        PathBuf::from(".")
-    }
-
-    pub fn empty_path() -> PathBuf {
-        PathBuf::new()
+    pub fn path() -> String {
+        String::new()
     }
 }
 

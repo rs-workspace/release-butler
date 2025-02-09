@@ -1,8 +1,12 @@
 use super::*;
-use crate::webhook::{generate_gh_from_event, get_config};
+use crate::{
+    config::PackageManager,
+    webhook::{generate_gh_from_event, get_config},
+};
 use octocrab::models::webhook_events::{
     payload::IssuesWebhookEventAction, WebhookEvent, WebhookEventPayload,
 };
+use std::path::PathBuf;
 use tracing::error;
 
 pub struct IssuesHandler<'a> {
@@ -139,21 +143,21 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 // check if package name is requried
                 if package.is_empty() && config.packages.len() > 1 {
                     if let Err(err) = issues_handler
-                    .create_comment(
-                        issues.issue.number,
-                        "The `release-butler.toml` contains information of multiple packages while no package \
-                        name was specified in the issue title.\n\nPlease prefix the title with `<PACKAGE_NAME>@`."
-                    )
-                    .await {
-                        error!(
-                            "Failed to create comment on issue #{} in {}/{} regarding package name not specified. Error: {}", 
+                        .create_comment(
                             issues.issue.number,
-                            self.repository.0,
-                            self.repository.1, err
-                        );
+                            "The `release-butler.toml` contains information of multiple packages while no package \
+                            name was specified in the issue title.\n\nPlease prefix the title with `<PACKAGE_NAME>@`."
+                        )
+                        .await {
+                            error!(
+                                "Failed to create comment on issue #{} in {}/{} regarding package name not specified. Error: {}", 
+                                issues.issue.number,
+                                self.repository.0,
+                                self.repository.1, err
+                            );
 
-                        return Ok(HttpResponse::Ok().finish());
-                    }
+                            return Ok(HttpResponse::Ok().finish());
+                        }
                 }
 
                 let package_information = if package.is_empty() {
@@ -185,6 +189,55 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
 
                     return Ok(HttpResponse::Ok().finish());
                 };
+
+                // Modify the files and create a commit
+                let blob = String::new();
+                let repos = gh.repos(self.repository.0, self.repository.1);
+                match package_information.package_manager {
+                    PackageManager::Cargo => {
+                        let path = PathBuf::from(&package_information.path).join("Cargo.toml");
+                        let Some(path) = path.to_str() else {
+                            error!("Failed to convert path to absolute path of `Cargo.toml`");
+                            return Ok(HttpResponse::Ok().finish());
+                        };
+                        println!("Path is {}", path);
+
+                        let content_items = match repos.get_content().path(path).send().await {
+                            Ok(contents) => contents,
+                            Err(err) => {
+                                if let octocrab::Error::GitHub { source, .. } = err {
+                                    if source.status_code.as_u16() == 404 {
+                                        error!(
+                                            "`{}` doesn't exists in {}/{}",
+                                            path, self.repository.0, self.repository.1
+                                        );
+                                        if let Err(err) = issues_handler
+                                            .create_comment(
+                                                issues.issue.number,
+                                                format!(
+                                                    "Failed to find file with path `{}`. Please make sure the file `Cargo.toml` exists.\n\n\
+                                                    If you believe this is a mistake please open a issue at [release-butler](https://github.com/rs-workspace/release-butler)",
+                                                    path
+                                                ),
+                                            )
+                                            .await
+                                        {
+                                            error!(
+                                                "Failed to create a comment in issue #{} in {}/{} regarding non-existing `Cargo.toml`. Error: {}",
+                                                issues.issue.number,
+                                                self.repository.0,
+                                                self.repository.1,
+                                                err
+                                            );
+                                        };
+                                    }
+                                };
+
+                                return Ok(HttpResponse::Ok().finish());
+                            }
+                        };
+                    } // TODO: More Package Managers
+                }
             }
             _ => {
                 return Err(WebhookError::UnsupportedEvent);
