@@ -42,9 +42,9 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 }
 
                 let gh = generate_gh_from_event(self.payload, &self.state.gh)?;
+                let issues_handler = gh.issues(self.repository.0, self.repository.1);
 
                 let Ok((package, version)) = parse_issue_title(&issues.issue.title) else {
-                    let issues_handler = gh.issues(self.repository.0, self.repository.1);
                     if let Err(err) = issues_handler
                         .create_comment(
                             issues.issue.number,
@@ -104,13 +104,10 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                     .iter()
                     .any(|author| author.to_lowercase() == issues.issue.user.login.to_lowercase())
                 {
-                    let issues_handler = gh.issues(self.repository.0, self.repository.1);
                     if let Err(err) = issues_handler
                         .create_comment(
                             issues.issue.number,
-                            "I see you are using `release-butler` label. This label is reserved for automated release \
-                            system and can only be used by certain authorized people.\n\nI will be removing the label \
-                            `release-butler` in the favor this comment."
+                            config.issues_meta_data.unauthorized_author_comment,
                         )
                         .await
                     {
@@ -138,6 +135,56 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
 
                     return Ok(HttpResponse::Ok().finish());
                 }
+
+                // check if package name is requried
+                if package.is_empty() && config.packages.len() > 1 {
+                    if let Err(err) = issues_handler
+                    .create_comment(
+                        issues.issue.number,
+                        "The `release-butler.toml` contains information of multiple packages while no package \
+                        name was specified in the issue title.\n\nPlease prefix the title with `<PACKAGE_NAME>@`."
+                    )
+                    .await {
+                        error!(
+                            "Failed to create comment on issue #{} in {}/{} regarding package name not specified. Error: {}", 
+                            issues.issue.number,
+                            self.repository.0,
+                            self.repository.1, err
+                        );
+
+                        return Ok(HttpResponse::Ok().finish());
+                    }
+                }
+
+                let package_information = if package.is_empty() {
+                    config.packages.values().next()
+                } else {
+                    config.packages.get(package)
+                };
+
+                let Some(package_information) = package_information else {
+                    if let Err(err) = issues_handler
+                        .create_comment(
+                            issues.issue.number,
+                            format!(
+                                "The package `{}` specified in the issue title was not found in the `release-butler.toml` \
+                                configuration file.\n\nPlease check the package name and try again.",
+                                if package.is_empty() { "default" } else { package }
+                            ),
+                        )
+                        .await
+                    {
+                        error!(
+                            "Failed to create comment on issue #{} in {}/{} regarding invalid package name. Error: {}",
+                            issues.issue.number,
+                            self.repository.0,
+                            self.repository.1,
+                            err
+                        );
+                    }
+
+                    return Ok(HttpResponse::Ok().finish());
+                };
             }
             _ => {
                 return Err(WebhookError::UnsupportedEvent);

@@ -69,7 +69,7 @@ mod defaults {
     pub fn unauthorized_author_comment() -> String {
         format!(
             "Hi, there you can't use the label `{}`, only some designated people are \
-            allowed to use this label. I will be removing this label soon. \
+            allowed to use this label. I will be removing this label for now. \
             \n\nRefer to `release-butler.toml` for more information",
             crate::RELEASE_ISSUE_LABEL
         )
