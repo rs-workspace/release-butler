@@ -41,7 +41,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                     return Ok(HttpResponse::Ok().finish());
                 }
 
-                let gh = generate_gh_from_event(&self.payload, &self.state.gh)?;
+                let gh = generate_gh_from_event(self.payload, &self.state.gh)?;
 
                 let Ok((package, version)) = parse_issue_title(&issues.issue.title) else {
                     let issues_handler = gh.issues(self.repository.0, self.repository.1);
@@ -92,10 +92,52 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 };
 
                 let Some(config) =
-                    get_config(self.repository.0, self.repository.1, &self.state, &gh).await
+                    get_config(self.repository.0, self.repository.1, self.state, &gh).await
                 else {
                     return Ok(HttpResponse::InternalServerError().finish());
                 };
+
+                // Check if issue is created by a valid user
+                if !config
+                    .issues_meta_data
+                    .allowed_authors
+                    .iter()
+                    .any(|author| author.to_lowercase() == issues.issue.user.login.to_lowercase())
+                {
+                    let issues_handler = gh.issues(self.repository.0, self.repository.1);
+                    if let Err(err) = issues_handler
+                        .create_comment(
+                            issues.issue.number,
+                            "I see you are using `release-butler` label. This label is reserved for automated release \
+                            system and can only be used by certain authorized people.\n\nI will be removing the label \
+                            `release-butler` in the favor this comment."
+                        )
+                        .await
+                    {
+                        error!(
+                            "Failed to create comment on issue #{} in {}/{} regarding unauthorized issue author. Error: {}", 
+                            issues.issue.number,
+                            self.repository.0,
+                            self.repository.1, err
+                        );
+                    }
+
+                    if let Err(err) = issues_handler
+                        .remove_label(issues.issue.number, crate::RELEASE_ISSUE_LABEL)
+                        .await
+                    {
+                        error!(
+                            "Failed to remove the label `{}` on issue #{} in {}/{}. Error: {}",
+                            crate::RELEASE_ISSUE_LABEL,
+                            issues.issue.number,
+                            self.repository.0,
+                            self.repository.1,
+                            err
+                        );
+                    }
+
+                    return Ok(HttpResponse::Ok().finish());
+                }
             }
             _ => {
                 return Err(WebhookError::UnsupportedEvent);
