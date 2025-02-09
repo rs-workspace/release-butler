@@ -8,7 +8,10 @@ pub mod tests_utils;
 pub mod webhook;
 
 pub static DEFAULT_CONFIG_FILE_PATH: &str = "release-butler.toml";
+
+// Labels
 pub static CONFIG_ISSUE_LABEL: &str = "release-butler-config-error";
+pub static RELEASE_ISSUE_LABEL: &str = "release-butler";
 
 pub struct State {
     pub webhook_secret: String,

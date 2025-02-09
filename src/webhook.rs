@@ -154,15 +154,13 @@ pub async fn parse_event(
     };
 
     let repository: Vec<&str> = repository.split("/").collect();
-    let (repo_owner, repo) = (repository[0], repository[1]);
+    let repository = (repository[0], repository[1]);
 
     match &event.kind {
         WebhookEventType::Issues => {
-            let gh = generate_gh_from_event(&event, &state.gh)?;
-            let Some(config) = get_config(repo_owner, repo, &state, &gh).await else {
-                return Ok(HttpResponse::Ok().finish());
-            };
-            events::issues::IssuesHandler::new(&event, config, &state, gh).execute()
+            events::issues::IssuesHandler::new(repository, &event, &state)
+                .execute()
+                .await
         }
         _ => {
             info!("Got an unsupported event: {:?}", event);
