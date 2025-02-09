@@ -191,25 +191,30 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 };
 
                 // Modify the files and create a commit
-                let blob = String::new();
+                let mut blobs: Vec<(&str, octocrab::models::commits::Tree)> = Vec::new();
                 let repos = gh.repos(self.repository.0, self.repository.1);
                 match package_information.package_manager {
                     PackageManager::Cargo => {
                         let path = PathBuf::from(&package_information.path).join("Cargo.toml");
-                        let Some(path) = path.to_str() else {
+                        let Some(path_str) = path.to_str() else {
                             error!("Failed to convert path to absolute path of `Cargo.toml`");
                             return Ok(HttpResponse::Ok().finish());
                         };
-                        println!("Path is {}", path);
+                        println!("Path is {}", path_str);
 
-                        let content_items = match repos.get_content().path(path).send().await {
+                        let mut content_items = match repos
+                            .get_content()
+                            .path(path_str)
+                            .send()
+                            .await
+                        {
                             Ok(contents) => contents,
                             Err(err) => {
                                 if let octocrab::Error::GitHub { source, .. } = err {
                                     if source.status_code.as_u16() == 404 {
                                         error!(
                                             "`{}` doesn't exists in {}/{}",
-                                            path, self.repository.0, self.repository.1
+                                            path_str, self.repository.0, self.repository.1
                                         );
                                         if let Err(err) = issues_handler
                                             .create_comment(
@@ -217,7 +222,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                                 format!(
                                                     "Failed to find file with path `{}`. Please make sure the file `Cargo.toml` exists.\n\n\
                                                     If you believe this is a mistake please open a issue at [release-butler](https://github.com/rs-workspace/release-butler)",
-                                                    path
+                                                    path_str
                                                 ),
                                             )
                                             .await
@@ -236,6 +241,126 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                 return Ok(HttpResponse::Ok().finish());
                             }
                         };
+
+                        let cargo_toml_files = content_items.take_items();
+                        for file_ in cargo_toml_files {
+                            if PathBuf::from(&file_.path) != path {
+                                continue;
+                            }
+
+                            let Some(cargo_toml_content) = file_.decoded_content() else {
+                                error!("Failed to decode of `Cargo.toml`");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            let Ok(mut doc) = cargo_toml_content.parse::<toml_edit::DocumentMut>()
+                            else {
+                                error!("Failed to parse `Cargo.toml`");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            // TODO: Make it also work with workspace versions
+                            doc["package"]["version"] = toml_edit::value(version.to_string());
+
+                            // TODO: Update CHANGELOG.md
+
+                            // Generate blob of files changed
+                            let Ok(blob_tree) = gh
+                                .post::<serde_json::Value, octocrab::models::commits::Tree>(
+                                    format!(
+                                        "/repos/{}/{}/git/blobs",
+                                        self.repository.0, self.repository.1
+                                    ),
+                                    Some(&serde_json::json!({
+                                        "content": doc.to_string(),
+                                        "encoding": "utf-8"
+                                    })),
+                                )
+                                .await
+                            else {
+                                error!("Failed to add `Cargo.toml` to blob");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            blobs.push((path_str, blob_tree));
+
+                            // Get the latest commit in default branch
+                            let Ok(commits) = repos
+                                .list_commits()
+                                .branch(config.default_branch)
+                                .send()
+                                .await
+                            else {
+                                error!("Failed to get commit history on default branch");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            let latest_commit_sha = &commits.items[0].sha;
+
+                            // Update Tree
+                            let mut trees: Vec<serde_json::Value> = Vec::new();
+                            for blob in blobs {
+                                // TODO: Make mode what was originally there
+                                trees.push(serde_json::json!({
+                                    "path": blob.0,
+                                    "mode": "100644",
+                                    "type": "blob",
+                                    "sha": blob.1.sha
+                                }));
+                            }
+                            let Ok(tree_information) = gh
+                                .post::<serde_json::Value, serde_json::Value>(
+                                    format!(
+                                        "/repos/{}/{}/git/trees",
+                                        self.repository.0, self.repository.1
+                                    ),
+                                    Some(&serde_json::json!({
+                                        "base_tree": latest_commit_sha,
+                                        "tree": trees
+                                    })),
+                                )
+                                .await
+                            else {
+                                error!("Failed to update the tree.");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+                            let tree_sha = &tree_information["sha"];
+
+                            // Create a commit
+                            let Ok(commit) = gh
+                                .post::<serde_json::Value, serde_json::Value>(
+                                    format!(
+                                        "/repos/{}/{}/git/commits",
+                                        self.repository.0, self.repository.1
+                                    ),
+                                    Some(&serde_json::json!({
+                                        "message": format!("RELEASE {}", version),
+                                        "tree": tree_sha,
+                                        "parents": [latest_commit_sha]
+                                    })),
+                                )
+                                .await
+                            else {
+                                error!("Failed to create a commit.");
+                                return Ok(HttpResponse::Ok().finish());
+                            };
+
+                            // Create a reference
+                            if let Err(err) = gh
+                                .post::<serde_json::Value, serde_json::Value>(
+                                    format!(
+                                        "/repos/{}/{}/git/refs",
+                                        self.repository.0, self.repository.1
+                                    ),
+                                    Some(&serde_json::json!({
+                                        "ref": format!("refs/heads/release-butler/{}", version),
+                                        "sha": commit["sha"]
+                                    })),
+                                )
+                                .await
+                            {
+                                error!("Failed to create a reference. Error: {}", err);
+                                return Ok(HttpResponse::Ok().finish());
+                            }
+
+                            break;
+                        }
                     } // TODO: More Package Managers
                 }
             }

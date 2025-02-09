@@ -34,8 +34,8 @@ on_hold_label = "release-butler-hold"
 # For example: `Cargo.toml` for rust package
 [packages.release-butler]
 # The path to root of the package. This path must be relative to repository root.
-# (Default: `.`)
-path = "/"
+# (Default: `.`) leave empty for root
+path = ""
 # The path to Changelog file for this package. This path must be relative to repository root.
 # (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
 changelog_file = ""
