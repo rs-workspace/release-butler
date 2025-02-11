@@ -124,16 +124,31 @@ impl<'a> UpdateFiles<'a> {
 
         // Check if the branch/reference already exists
         let repos = self.gh.repos(owner, repo);
-        if repos.get_ref(&self.ref_).await.is_ok() {
-            if let Err(err) = repos.delete_ref(&self.ref_).await {
-                error!("Failed to delete the ref. Error: {}", err);
-                return;
+        if repos.get_ref(&self.ref_).await.is_err() {
+            // Create a branch/reference
+            if let Err(err) = repos.create_ref(&self.ref_, commit_sha).await {
+                error!("Failed to create the reference. Error: {}", err);
             }
-        }
-
-        // Create a branch/reference
-        if let Err(err) = repos.create_ref(&self.ref_, commit_sha).await {
-            error!("Failed to create the reference. Error: {}", err);
+        } else if let Err(err) = self
+            .gh
+            .patch::<serde_json::Value, String, serde_json::Value>(
+                format!("/repos/{}/{}/git/refs/{}", owner, repo, self.ref_.ref_url()),
+                Some(&serde_json::json!({
+                    "sha": commit_sha,
+                    "force": true
+                })),
+            )
+            .await
+        {
+            error!(
+                "URL: {}\nBody:{}",
+                format!("/repos/{}/{}/git/refs/{}", owner, repo, self.ref_.ref_url()),
+                serde_json::json!({
+                    "sha": commit_sha,
+                    "force": true
+                })
+            );
+            error!("Failed to force update the ref. Error: {}", err);
         }
     }
 }
