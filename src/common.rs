@@ -1,5 +1,8 @@
 use hmac::{Hmac, Mac};
+use octocrab::{params::repos::Reference, Octocrab};
+use serde::Serialize;
 use sha2::Sha256;
+use tracing::error;
 
 pub type HmacSha256 = Hmac<Sha256>;
 
@@ -12,6 +15,127 @@ pub fn generate_hmac_sha256_hex(body: &[u8], key: &[u8]) -> Option<String> {
         return None;
     };
     Some(hex.to_owned())
+}
+
+pub struct UpdateFiles<'a> {
+    gh: &'a Octocrab,
+    files: Vec<File>,
+    ref_: Reference,
+    commit_msg: String,
+}
+
+pub struct File {
+    pub name: String,
+    pub new_content: String,
+}
+
+impl<'a> UpdateFiles<'a> {
+    pub fn new(gh: &'a Octocrab, files: Vec<File>, ref_: Reference, commit_msg: String) -> Self {
+        Self {
+            gh,
+            files,
+            ref_,
+            commit_msg,
+        }
+    }
+
+    pub async fn execute(self, owner: &str, repo: &str, base_commit_sha: &str) {
+        #[derive(Serialize, Debug)]
+        struct BlobsTree {
+            path: String,
+            mode: String,
+            r#type: String,
+            sha: serde_json::Value,
+        }
+
+        let mut blobs = Vec::new();
+
+        for file in self.files {
+            // Create the blob
+            match self
+                .gh
+                .post::<serde_json::Value, serde_json::Value>(
+                    format!("/repos/{}/{}/git/blobs", owner, repo),
+                    Some(&serde_json::json!({
+                        "content": file.new_content
+                    })),
+                )
+                .await
+            {
+                Ok(mut res) => {
+                    blobs.push(BlobsTree {
+                        path: file.name,
+                        mode: String::from("100644"),
+                        r#type: String::from("blob"),
+                        sha: res["sha"].take(),
+                    });
+                }
+                Err(err) => {
+                    error!(
+                        "Failed to upload blob of file {} in repo {}/{}. Error: {}",
+                        file.name, owner, repo, err
+                    );
+                    continue;
+                }
+            };
+        }
+
+        if blobs.is_empty() {
+            return;
+        }
+
+        // Create a tree
+        let Ok(tree_res) = self
+            .gh
+            .post::<serde_json::Value, serde_json::Value>(
+                format!("/repos/{}/{}/git/trees", owner, repo),
+                Some(&serde_json::json!({
+                    "base_tree": base_commit_sha,
+                    "tree": blobs
+                })),
+            )
+            .await
+        else {
+            error!("Failed to create tree. blobs: {:?}", blobs);
+            return;
+        };
+        let tree_sha = tree_res["sha"].as_str().unwrap_or_default();
+
+        // Create a commit
+        let commit_res = match self
+            .gh
+            .post::<serde_json::Value, serde_json::Value>(
+                format!("/repos/{}/{}/git/commits", owner, repo),
+                Some(&serde_json::json!({
+                    "message": self.commit_msg,
+                    "tree": tree_sha,
+                    "parents": [base_commit_sha]
+                })),
+            )
+            .await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                error!("Failed to create commit! Error: {}", err);
+                return;
+            }
+        };
+        let commit_sha = commit_res["sha"].as_str().unwrap_or_default();
+
+        // Check if the branch/reference already exists
+        let repos = self.gh.repos(owner, repo);
+        if repos.get_ref(&self.ref_).await.is_ok() {
+            if let Err(err) = repos.delete_ref(&self.ref_).await {
+                error!("Failed to delete the ref. Error: {}", err);
+                return;
+            }
+        }
+
+        // Create a branch/reference
+        if let Err(err) = repos.create_ref(&self.ref_, commit_sha).await {
+            error!("Failed to create the reference. Error: {}", err);
+        }
+    }
 }
 
 #[cfg(test)]

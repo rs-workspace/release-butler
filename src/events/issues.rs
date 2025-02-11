@@ -1,10 +1,14 @@
 use super::*;
 use crate::{
+    common::{File, UpdateFiles},
     config::PackageManager,
     webhook::{generate_gh_from_event, get_config},
 };
-use octocrab::models::webhook_events::{
-    payload::IssuesWebhookEventAction, WebhookEvent, WebhookEventPayload,
+use octocrab::{
+    models::webhook_events::{
+        payload::IssuesWebhookEventAction, WebhookEvent, WebhookEventPayload,
+    },
+    params::repos::Reference,
 };
 use std::path::PathBuf;
 use tracing::error;
@@ -191,7 +195,6 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 };
 
                 // Modify the files and create a commit
-                let mut blobs: Vec<(&str, octocrab::models::commits::Tree)> = Vec::new();
                 let repos = gh.repos(self.repository.0, self.repository.1);
                 match package_information.package_manager {
                     PackageManager::Cargo => {
@@ -200,7 +203,6 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             error!("Failed to convert path to absolute path of `Cargo.toml`");
                             return Ok(HttpResponse::Ok().finish());
                         };
-                        println!("Path is {}", path_str);
 
                         let mut content_items = match repos
                             .get_content()
@@ -242,6 +244,8 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             }
                         };
 
+                        let mut updated_files = Vec::new();
+
                         let cargo_toml_files = content_items.take_items();
                         for file_ in cargo_toml_files {
                             if PathBuf::from(&file_.path) != path {
@@ -260,27 +264,17 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             // TODO: Make it also work with workspace versions
                             doc["package"]["version"] = toml_edit::value(version.to_string());
 
-                            // TODO: Update CHANGELOG.md
+                            updated_files.push(File {
+                                name: file_.name,
+                                new_content: doc.to_string(),
+                            });
 
-                            // Generate blob of files changed
-                            let Ok(blob_tree) = gh
-                                .post::<serde_json::Value, octocrab::models::commits::Tree>(
-                                    format!(
-                                        "/repos/{}/{}/git/blobs",
-                                        self.repository.0, self.repository.1
-                                    ),
-                                    Some(&serde_json::json!({
-                                        "content": doc.to_string(),
-                                        "encoding": "utf-8"
-                                    })),
-                                )
-                                .await
-                            else {
-                                error!("Failed to add `Cargo.toml` to blob");
-                                return Ok(HttpResponse::Ok().finish());
-                            };
-                            blobs.push((path_str, blob_tree));
+                            break;
+                        }
+                        // TODO: Update CHANGELOG.md
 
+                        // Push changes to branch
+                        if !updated_files.is_empty() {
                             // Get the latest commit in default branch
                             let Ok(commits) = repos
                                 .list_commits()
@@ -293,74 +287,22 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             };
                             let latest_commit_sha = &commits.items[0].sha;
 
-                            // Update Tree
-                            let mut trees: Vec<serde_json::Value> = Vec::new();
-                            for blob in blobs {
-                                // TODO: Make mode what was originally there
-                                trees.push(serde_json::json!({
-                                    "path": blob.0,
-                                    "mode": "100644",
-                                    "type": "blob",
-                                    "sha": blob.1.sha
-                                }));
-                            }
-                            let Ok(tree_information) = gh
-                                .post::<serde_json::Value, serde_json::Value>(
-                                    format!(
-                                        "/repos/{}/{}/git/trees",
-                                        self.repository.0, self.repository.1
-                                    ),
-                                    Some(&serde_json::json!({
-                                        "base_tree": latest_commit_sha,
-                                        "tree": trees
-                                    })),
-                                )
-                                .await
-                            else {
-                                error!("Failed to update the tree.");
-                                return Ok(HttpResponse::Ok().finish());
-                            };
-                            let tree_sha = &tree_information["sha"];
+                            let updated_files = UpdateFiles::new(
+                                &gh,
+                                updated_files,
+                                Reference::Branch(format!(
+                                    "release-butler/{}@{}",
+                                    package, version
+                                )),
+                                format!("chore: RELEASE {}", version),
+                            );
 
-                            // Create a commit
-                            let Ok(commit) = gh
-                                .post::<serde_json::Value, serde_json::Value>(
-                                    format!(
-                                        "/repos/{}/{}/git/commits",
-                                        self.repository.0, self.repository.1
-                                    ),
-                                    Some(&serde_json::json!({
-                                        "message": format!("RELEASE {}", version),
-                                        "tree": tree_sha,
-                                        "parents": [latest_commit_sha]
-                                    })),
-                                )
-                                .await
-                            else {
-                                error!("Failed to create a commit.");
-                                return Ok(HttpResponse::Ok().finish());
-                            };
-
-                            // Create a reference
-                            if let Err(err) = gh
-                                .post::<serde_json::Value, serde_json::Value>(
-                                    format!(
-                                        "/repos/{}/{}/git/refs",
-                                        self.repository.0, self.repository.1
-                                    ),
-                                    Some(&serde_json::json!({
-                                        "ref": format!("refs/heads/release-butler/{}", version),
-                                        "sha": commit["sha"]
-                                    })),
-                                )
-                                .await
-                            {
-                                error!("Failed to create a reference. Error: {}", err);
-                                return Ok(HttpResponse::Ok().finish());
-                            }
-
-                            break;
+                            updated_files
+                                .execute(self.repository.0, self.repository.1, latest_commit_sha)
+                                .await;
                         }
+
+                        // TODO: Open a PR, if not opened already
                     } // TODO: More Package Managers
                 }
             }
