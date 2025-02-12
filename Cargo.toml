@@ -1,6 +1,6 @@
 [package]
 name = "release-butler"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["Aditya Kumar <git@adityais.dev>"]
 
