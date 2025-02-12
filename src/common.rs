@@ -158,7 +158,7 @@ impl ReferenceExt for Reference {
     fn branch_name(&self) -> String {
         match self {
             Reference::Branch(branch) => branch.to_owned(),
-            Reference::Tag(_) => String::new(),
+            Reference::Tag(tag) => tag.to_owned(),
         }
     }
 }

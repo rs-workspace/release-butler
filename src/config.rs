@@ -40,6 +40,11 @@ pub struct Package {
     /// (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
     #[serde(default = "defaults::path")]
     pub pre_release_changelog_file: String,
+    /// Creates the GitHub Release with the changelog
+    ///
+    /// (Default: `false`)
+    #[serde(default = "defaults::false_")]
+    pub create_gh_release: bool,
     /// The package manager used by this package.
     pub package_manager: PackageManager,
 }
@@ -59,6 +64,10 @@ mod defaults {
             \n\nRefer to `release-butler.toml` for more information",
             crate::RELEASE_ISSUE_LABEL
         )
+    }
+
+    pub fn false_() -> bool {
+        false
     }
 
     pub fn path() -> String {

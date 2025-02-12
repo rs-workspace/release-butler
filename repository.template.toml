@@ -35,6 +35,9 @@ changelog_file = ""
 # be relative to repository root.
 # (Default: ``, i.e. if empty string is provided then no Changelog file will be appended with changes)
 pre_release_changelog_file = ""
+# Creates the GitHub Release with the changelog
+# (Default: `false`)
+create_gh_release = true
 # The package manager used by this package.
 # Supported values:
 # - cargo

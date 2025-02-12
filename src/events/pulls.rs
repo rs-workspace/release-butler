@@ -3,9 +3,12 @@ use octocrab::models::webhook_events::{
 };
 use tracing::error;
 
-use crate::webhook::generate_gh_from_event;
+use crate::{
+    common::ReferenceExt,
+    webhook::{generate_gh_from_event, get_config},
+};
 
-use super::*;
+use super::{issues::parse_issue_title, *};
 
 pub struct PullsHandler<'a> {
     payload: &'a WebhookEvent,
@@ -80,15 +83,95 @@ impl<'a> Handler<'a> for PullsHandler<'a> {
                                     return Ok(HttpResponse::Ok().finish());
                                 };
 
+                                let Ok((package, version)) = parse_issue_title(tag) else {
+                                    error!("Failed to parse issue title");
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+
+                                let tag = octocrab::params::repos::Reference::Tag(tag.to_owned());
+
                                 if let Err(err) = gh
                                     .repos(self.repository.0, self.repository.1)
-                                    .create_ref(
-                                        &octocrab::params::repos::Reference::Tag(tag.to_owned()),
-                                        commit_sha,
-                                    )
+                                    .create_ref(&tag, commit_sha)
                                     .await
                                 {
                                     error!("Failed to create tag. Error: {}", err);
+                                }
+
+                                let Some(config) = get_config(
+                                    self.repository.0,
+                                    self.repository.1,
+                                    self.state,
+                                    &gh,
+                                )
+                                .await
+                                else {
+                                    error!("Failed to fetch config file");
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+
+                                let package_information = if config.packages.len() == 1 {
+                                    if let Some((_, package)) = config.packages.iter().next() {
+                                        package
+                                    } else {
+                                        return Ok(HttpResponse::Ok().finish());
+                                    }
+                                } else if let Some(package) = config.packages.get(package) {
+                                    package
+                                } else {
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+
+                                if package_information.create_gh_release {
+                                    // get the issue number from pull body (Fixes #{number} <OTHER STUFF>)
+                                    let body = pull.pull_request.body.as_ref().map_or("", |v| v);
+
+                                    let numbers: Vec<&str> = body
+                                        .split(|c: char| !c.is_numeric() && c != '#')
+                                        .filter(|n| n.starts_with("#"))
+                                        .collect();
+
+                                    let Some(issue_number) = numbers[0].strip_prefix("#") else {
+                                        error!("Failed to get the issue number");
+                                        return Ok(HttpResponse::Ok().finish());
+                                    };
+
+                                    let Ok(issue) = gh
+                                        .issues(self.repository.0, self.repository.1)
+                                        .get(issue_number.parse().unwrap_or_default())
+                                        .await
+                                    else {
+                                        error!("Failed to get issue with number {}", issue_number);
+                                        return Ok(HttpResponse::Ok().finish());
+                                    };
+
+                                    let issue_body = issue
+                                        .body
+                                        .as_ref()
+                                        .map_or("<!-- No CHANGELOG Provided -->", |v| v);
+
+                                    let repo_release =
+                                        gh.repos(self.repository.0, self.repository.1);
+                                    let repo_release = repo_release.releases();
+
+                                    let tag_name = tag.branch_name();
+
+                                    let mut release = repo_release
+                                        .create(&tag_name)
+                                        .body(issue_body)
+                                        .name(&tag_name);
+
+                                    if version.pre.is_empty() {
+                                        release = release.prerelease(true);
+                                    } else {
+                                        release = release.make_latest(
+                                            octocrab::repos::releases::MakeLatest::True,
+                                        );
+                                    }
+
+                                    if let Err(err) = release.send().await {
+                                        error!("Failed to create release. Error: {}", err);
+                                    }
                                 }
 
                                 // Create the tag
