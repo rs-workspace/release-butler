@@ -41,10 +41,10 @@ impl<'a> Handler<'a> for PullsHandler<'a> {
                 }
 
                 if let Some(pull_label) = &pull.pull_request.head.label {
-                    if pull_label
-                        .to_lowercase()
-                        .starts_with(&format!("{}:release-butler/", self.repository.0))
-                    {
+                    if pull_label.to_lowercase().starts_with(&format!(
+                        "{}:release-butler/",
+                        self.repository.0.to_lowercase()
+                    )) {
                         let Ok(gh) = generate_gh_from_event(self.payload, &self.state.gh) else {
                             error!("Failed to authenticate from github webhook installation id");
                             return Ok(HttpResponse::Ok().finish());
