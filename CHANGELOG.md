@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.1] - 2025-02-12
+### Fixes
+- incorrect pre-release condition for creating release
+
 ## [0.1.0] - 2025-02-12
 ### Added
 - Initial release of Release Butler.
