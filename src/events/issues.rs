@@ -204,7 +204,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             return Ok(HttpResponse::Ok().finish());
                         };
 
-                        let mut content_items = match repos
+                        let mut cargo_toml_content_items = match repos
                             .get_content()
                             .path(path_str)
                             .send()
@@ -246,7 +246,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
 
                         let mut updated_files = Vec::new();
 
-                        let cargo_toml_files = content_items.take_items();
+                        let cargo_toml_files = cargo_toml_content_items.take_items();
                         for file_ in cargo_toml_files {
                             if PathBuf::from(&file_.path) != path {
                                 continue;
@@ -271,7 +271,100 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
 
                             break;
                         }
-                        // TODO: Update CHANGELOG.md
+
+                        let changelog_path_str = if version.pre.is_empty() {
+                            &package_information.changelog_file
+                        } else {
+                            &package_information.pre_release_changelog_file
+                        };
+
+                        if !changelog_path_str.is_empty() {
+                            let changelog_content_items =
+                                match repos.get_content().path(changelog_path_str).send().await {
+                                    Ok(mut contents) => contents.take_items(),
+                                    Err(err) => {
+                                        if let octocrab::Error::GitHub { source, .. } = err {
+                                            if source.status_code.as_u16() == 404 {
+                                                Vec::new()
+                                            } else {
+                                                return Ok(HttpResponse::Ok().finish());
+                                            }
+                                        } else {
+                                            return Ok(HttpResponse::Ok().finish());
+                                        }
+                                    }
+                                };
+                            let changelog_file_path = PathBuf::from(changelog_path_str);
+
+                            // Create the file if doesn't exists
+                            if changelog_content_items.is_empty() {
+                                let new_content = format!(
+                                    "# Changelog\n\n## [{}] - {}\n{}",
+                                    version,
+                                    issues.issue.updated_at.format("%Y-%m-%d"),
+                                    issues.issue.body.as_ref().unwrap_or(&String::new())
+                                );
+
+                                updated_files.push(File {
+                                    name: changelog_path_str.to_owned(),
+                                    new_content,
+                                });
+                            }
+
+                            for content in changelog_content_items {
+                                if PathBuf::from(&content.path) != changelog_file_path {
+                                    continue;
+                                }
+
+                                let Some(changelog_content) = content.decoded_content() else {
+                                    error!("Failed to decode changelog content");
+                                    continue;
+                                };
+
+                                let changelog_lines: Vec<&str> =
+                                    changelog_content.lines().collect();
+                                let mut new_content = String::new();
+                                let mut added_version = false;
+
+                                // Find the first "## [" line to insert the new version before it
+                                for line in changelog_lines {
+                                    if !added_version && line.starts_with("## [") {
+                                        // Add new version section
+                                        new_content.push_str(&format!(
+                                            "## [{}] - {}\n",
+                                            version,
+                                            issues.issue.updated_at.format("%Y-%m-%d")
+                                        ));
+                                        new_content.push_str(
+                                            issues.issue.body.as_ref().unwrap_or(&String::new()),
+                                        );
+                                        new_content.push_str("\n\n");
+                                        added_version = true;
+                                    }
+                                    new_content.push_str(line);
+                                    new_content.push('\n');
+                                }
+
+                                // If no version headers found, append to the end
+                                if !added_version {
+                                    new_content.push_str(&format!(
+                                        "## [{}] - {}\n",
+                                        version,
+                                        issues.issue.updated_at.format("%Y-%m-%d")
+                                    ));
+                                    new_content.push_str(
+                                        issues.issue.body.as_ref().unwrap_or(&String::new()),
+                                    );
+                                    new_content.push('\n');
+                                }
+
+                                updated_files.push(File {
+                                    name: content.name,
+                                    new_content,
+                                });
+                                break;
+                            }
+                        }
 
                         // Push changes to branch
                         if !updated_files.is_empty() {
