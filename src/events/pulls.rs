@@ -161,7 +161,7 @@ impl<'a> Handler<'a> for PullsHandler<'a> {
                                         .body(issue_body)
                                         .name(&tag_name);
 
-                                    if version.pre.is_empty() {
+                                    if !version.pre.is_empty() {
                                         release = release.prerelease(true);
                                     } else {
                                         release = release.make_latest(
