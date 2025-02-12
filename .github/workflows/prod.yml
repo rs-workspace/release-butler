@@ -1,0 +1,28 @@
+name: Deploy to Shuttle.rs Production
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+jobs:
+    deploy:
+      name: Deploy to shuttle.rs
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+
+        - name: Install Rust
+          uses: rs-workspace/rust-toolchain@v0.2.0
+
+        - name: Deploy to shuttle.rs
+          uses: shuttle-hq/deploy-action@v2
+          with:
+            shuttle-api-key: ${{secrets.SHUTTLE_API_KEY}}
+            project-id: proj_01JKK5R2PANJ7VZ8PFB6BZFDX5
+            secrets: |
+              RELEASE-BUTLER-SECRET = '${{ secrets.RELASE_BUTLER_SECRET }}'
+              APP-USERNAME = '${{ secrets.APP_USERNAME }}'
+              APPID = '${{ secrets.APP_ID }}'
+              PRIVATE-KEY = '${{ secrets.PRIVATE_KEY }}'
