@@ -416,7 +416,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             if !is_pull_already_there {
                                 if let Err(err) = pulls
                                     .create(
-                                        format!("RELEASE {}@{}", package, version),
+                                        format!("RELEASE {}@v{}", package, version),
                                         branch.branch_name(),
                                         &config.default_branch,
                                     )

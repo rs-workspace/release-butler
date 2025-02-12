@@ -33,13 +33,6 @@ impl<'a> Handler<'a> for PullsHandler<'a> {
 
         match pull.action {
             PullRequestWebhookEventAction::Closed => {
-                // Ignore if the PR was merged
-                if let Some(merged) = pull.pull_request.merged {
-                    if merged {
-                        return Ok(HttpResponse::Ok().finish());
-                    }
-                }
-
                 if let Some(pull_label) = &pull.pull_request.head.label {
                     if pull_label.to_lowercase().starts_with(&format!(
                         "{}:release-butler/",
@@ -50,6 +43,60 @@ impl<'a> Handler<'a> for PullsHandler<'a> {
                             return Ok(HttpResponse::Ok().finish());
                         };
 
+                        // Check if PR was merged
+                        if let Some(merged) = pull.pull_request.merged {
+                            if merged {
+                                // Create a tag
+                                let Some(commit_sha) = &pull.pull_request.merge_commit_sha else {
+                                    return Err(WebhookError::MalformatedBody {
+                                        msg: String::from(
+                                            "The payload must contain `merge_commit_sha`",
+                                        ),
+                                    });
+                                };
+
+                                let Some(pull_title) = &pull.pull_request.title else {
+                                    return Err(WebhookError::MalformatedBody {
+                                        msg: String::from("The payload must contain `title`"),
+                                    });
+                                };
+
+                                let Some(tag) = pull_title.strip_prefix("RELEASE ") else {
+                                    if let Err(err) = gh
+                                        .issues(self.repository.0, self.repository.1)
+                                        .create_comment(
+                                            pull.number,
+                                            "The release title is malformated. It should be in the following format:\n\n`RELEASE <PACKAGE_NAME>@v<VERSION>`"
+                                            )
+                                        .await
+                                    {
+                                        error!("Failed to create PR comment. Error: {}", err);
+                                    }
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+
+                                let Some(tag) = tag.strip_prefix("@") else {
+                                    error!("Failed to find the tag for release");
+                                    return Ok(HttpResponse::Ok().finish());
+                                };
+
+                                if let Err(err) = gh
+                                    .repos(self.repository.0, self.repository.1)
+                                    .create_ref(
+                                        &octocrab::params::repos::Reference::Tag(tag.to_owned()),
+                                        commit_sha,
+                                    )
+                                    .await
+                                {
+                                    error!("Failed to create tag. Error: {}", err);
+                                }
+
+                                // Create the tag
+                                return Ok(HttpResponse::Ok().finish());
+                            }
+                        }
+
+                        // PR is closed, notify user
                         if let Err(err) = gh
                             .issues(self.repository.0, self.repository.1)
                             .create_comment(
