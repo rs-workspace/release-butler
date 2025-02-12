@@ -4,7 +4,7 @@ Release Butler is a GitHub App that automates the process of creating pull reque
 
 ## Features
 
-- Listens to issues created with a specified label (default: `release-butler`).
+- Listens to issues created with a `release-butler` label.
 - Creates a pull request with:
     - Semver version bump (version specified in the issue title).
     - Changelog (issue body).
@@ -14,7 +14,7 @@ Release Butler is a GitHub App that automates the process of creating pull reque
 
 1. Install the Release Butler GitHub App on your repository.
 2. Create `.github/release-butler.toml`
-3. Create an issue with the label `release-butler` (or the label specified in the configuration).
+3. Create an issue with the label `release-butler`.
 4. In the issue title, specify the new version (e.g., `v1.2.3`).
 5. In the issue body, provide the changelog details.
 6. Release Butler will automatically create a pull request with the version bump and changelog.

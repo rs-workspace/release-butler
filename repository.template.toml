@@ -13,9 +13,6 @@ allowed_authors = ["AS1100K"]
 # and will remove the label. (Automatically generated, if not provided)
 #
 # unauthorized_author_comment = ""
-#
-# The label on the issue that will be considered. (Default: `release-butler`)
-label = "release-butler"
 
 
 # `packages.<PACKAGE_NAME>`, if multiple packages are available then,
