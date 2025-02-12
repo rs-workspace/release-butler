@@ -25,4 +25,4 @@ jobs:
               RELEASE-BUTLER-SECRET = '${{ secrets.RELASE_BUTLER_SECRET }}'
               APP-USERNAME = '${{ secrets.APP_USERNAME }}'
               APPID = '${{ secrets.APP_ID }}'
-              PRIVATE-KEY = '${{ secrets.PRIVATE_KEY }}'
+              PRIVATE-KEY = """${{ secrets.PRIVATE_KEY }}"""
