@@ -1,6 +1,6 @@
 use crate::{
     common::generate_hmac_sha256_hex,
-    config::Config,
+    config::{Config, CONFIG_VERSION},
     events::{self, Handler},
     State, DEFAULT_CONFIG_FILE_PATH,
 };
@@ -298,6 +298,54 @@ pub async fn get_config(
 
         return None;
     };
+
+    if config.version != CONFIG_VERSION {
+        error!("Unsupport Configuration Version");
+
+        let issues = gh.issues(repo_owner, repo);
+
+        // Check if issue already exists or not with label `$CONFIG_ISSUE_LABEL`
+        let Ok(issues_list) = issues
+            .list()
+            .creator(&state.app_username)
+            .labels(&[String::from(crate::CONFIG_ISSUE_LABEL)])
+            .send()
+            .await
+        else {
+            error!(
+                "Failed to get information if issue with label {} by user {} was created or not.",
+                crate::CONFIG_ISSUE_LABEL,
+                state.app_username
+            );
+            return None;
+        };
+
+        if issues_list.items.is_empty() {
+            info!(
+                "There is no issue created with label {} by user {}, creating one...",
+                crate::CONFIG_ISSUE_LABEL,
+                state.app_username
+            );
+
+            match issues
+                .create("Outdated release-butler configuration file")
+                .body(
+                    format!(
+                        "The current version of `release-butler.toml` is {}. It is not the latest version supported by me. Please look at [release-butler repository](https://github.com/rs-workspace/release-butler) for more information for upgrading.",
+                        config.version
+                    )
+                )
+                .labels(vec![String::from(crate::CONFIG_ISSUE_LABEL)])
+                .send().await {
+                    Ok(_) => {
+                        info!("Created an issue highlighting problem with {} in {}/{}", DEFAULT_CONFIG_FILE_PATH, repo_owner, repo);
+                    },
+                    Err(err) => {
+                        error!("Failed to create issue. Error: {:?}", err)
+                    }
+                }
+        }
+    }
 
     Some(config)
 }

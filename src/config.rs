@@ -8,7 +8,6 @@ pub struct Config {
     /// Default base branch for PR(s)
     pub default_branch: String,
     pub issues_meta_data: IssueMetaData,
-    pub pr_meta_data: PRMetaData,
     pub packages: BTreeMap<String, Package>,
     /// Configuration Version
     pub version: u8,
@@ -22,17 +21,6 @@ pub struct IssueMetaData {
     /// and will remove the label. (Automatically generated, if not provided)
     #[serde(default = "defaults::unauthorized_author_comment")]
     pub unauthorized_author_comment: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PRMetaData {
-    /// When this label is on the PR, the release-butler will hold the PR as it and will
-    /// not push any further changes until this label is removed
-    #[serde(default = "defaults::on_hold_label")]
-    pub on_hold_label: String,
-    /// The Prefix that will be used on head branch. (Default: `release-butler`)
-    #[serde(default = "defaults::branch_prefix")]
-    pub branch_prefix: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -71,14 +59,6 @@ mod defaults {
             \n\nRefer to `release-butler.toml` for more information",
             crate::RELEASE_ISSUE_LABEL
         )
-    }
-
-    pub fn branch_prefix() -> String {
-        String::from("release-butler/")
-    }
-
-    pub fn on_hold_label() -> String {
-        String::from("release-butler-hold")
     }
 
     pub fn path() -> String {

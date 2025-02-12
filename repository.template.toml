@@ -18,14 +18,6 @@ allowed_authors = ["AS1100K"]
 label = "release-butler"
 
 
-[pr_meta_data]
-# The Prefix that will be used on head branch. (Default: `release-butler`)
-branch_prefix = "release-butler/"
-# When this label is on the PR, the release-butler will hold the PR as it and will
-# not push any further changes until this label is removed
-on_hold_label = "release-butler-hold"
-
-
 # `packages.<PACKAGE_NAME>`, if multiple packages are available then,
 # your issue title must be in `<PACKAGE_NAME>@v0.1.5` where `v0.1.5` can be any semver
 # version
