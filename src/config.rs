@@ -61,7 +61,7 @@ mod defaults {
         format!(
             "Hi, there you can't use the label `{}`, only some designated people are \
             allowed to use this label. I will be removing this label for now. \
-            \n\nRefer to `release-butler.toml` for more information",
+            \n\nRefer to `.github/release-butler.toml` for more information",
             crate::RELEASE_ISSUE_LABEL
         )
     }

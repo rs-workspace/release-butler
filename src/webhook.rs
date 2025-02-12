@@ -331,7 +331,7 @@ pub async fn get_config(
                 .create("Outdated release-butler configuration file")
                 .body(
                     format!(
-                        "The current version of `release-butler.toml` is {}. It is not the latest version supported by me. Please look at [release-butler repository](https://github.com/rs-workspace/release-butler) for more information for upgrading.",
+                        "The current version of `.github/release-butler.toml` is {}. It is not the latest version supported by me. Please look at [release-butler repository](https://github.com/rs-workspace/release-butler) for more information for upgrading.",
                         config.version
                     )
                 )

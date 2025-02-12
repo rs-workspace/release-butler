@@ -149,7 +149,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                     if let Err(err) = issues_handler
                         .create_comment(
                             issues.issue.number,
-                            "The `release-butler.toml` contains information of multiple packages while no package \
+                            "The `.github/release-butler.toml` contains information of multiple packages while no package \
                             name was specified in the issue title.\n\nPlease prefix the title with `<PACKAGE_NAME>@`."
                         )
                         .await {
@@ -175,7 +175,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                         .create_comment(
                             issues.issue.number,
                             format!(
-                                "The package `{}` specified in the issue title was not found in the `release-butler.toml` \
+                                "The package `{}` specified in the issue title was not found in the `.github/release-butler.toml` \
                                 configuration file.\n\nPlease check the package name and try again.",
                                 if package.is_empty() { "default" } else { package }
                             ),
