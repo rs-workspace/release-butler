@@ -145,14 +145,6 @@ impl<'a> UpdateFiles<'a> {
             )
             .await
         {
-            error!(
-                "URL: {}\nBody:{}",
-                format!("/repos/{}/{}/git/refs/{}", owner, repo, self.ref_.ref_url()),
-                serde_json::json!({
-                    "sha": commit_sha,
-                    "force": true
-                })
-            );
             error!("Failed to force update the ref. Error: {}", err);
         }
     }

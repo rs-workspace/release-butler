@@ -328,7 +328,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                         &config.default_branch,
                                     )
                                     .maintainer_can_modify(true)
-                                    .body(format!("Fixes #{}", issues.issue.number))
+                                    .body(format!("Fixes #{}\n\nThis is an automatically generated PR by [release-butler](https://github.com/rs-workspace/release-butler)", issues.issue.number))
                                     .send()
                                     .await
                                 {

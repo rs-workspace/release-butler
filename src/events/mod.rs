@@ -3,6 +3,7 @@ use actix_web::HttpResponse;
 use octocrab::models::webhook_events::WebhookEvent;
 
 pub mod issues;
+pub mod pulls;
 
 #[async_trait::async_trait]
 pub trait Handler<'a> {

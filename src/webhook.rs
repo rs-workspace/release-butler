@@ -162,6 +162,11 @@ pub async fn parse_event(
                 .execute()
                 .await
         }
+        WebhookEventType::PullRequest => {
+            events::pulls::PullsHandler::new(repository, &event, &state)
+                .execute()
+                .await
+        }
         _ => {
             info!("Got an unsupported event: {:?}", event);
             Err(WebhookError::UnsupportedEvent)
