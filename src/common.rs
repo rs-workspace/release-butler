@@ -20,7 +20,7 @@ pub fn generate_hmac_sha256_hex(body: &[u8], key: &[u8]) -> Option<String> {
 pub struct UpdateFiles<'a> {
     gh: &'a Octocrab,
     files: Vec<File>,
-    ref_: Reference,
+    ref_: &'a Reference,
     commit_msg: String,
 }
 
@@ -30,7 +30,12 @@ pub struct File {
 }
 
 impl<'a> UpdateFiles<'a> {
-    pub fn new(gh: &'a Octocrab, files: Vec<File>, ref_: Reference, commit_msg: String) -> Self {
+    pub fn new(
+        gh: &'a Octocrab,
+        files: Vec<File>,
+        ref_: &'a Reference,
+        commit_msg: String,
+    ) -> Self {
         Self {
             gh,
             files,
@@ -124,9 +129,9 @@ impl<'a> UpdateFiles<'a> {
 
         // Check if the branch/reference already exists
         let repos = self.gh.repos(owner, repo);
-        if repos.get_ref(&self.ref_).await.is_err() {
+        if repos.get_ref(self.ref_).await.is_err() {
             // Create a branch/reference
-            if let Err(err) = repos.create_ref(&self.ref_, commit_sha).await {
+            if let Err(err) = repos.create_ref(self.ref_, commit_sha).await {
                 error!("Failed to create the reference. Error: {}", err);
             }
         } else if let Err(err) = self
@@ -149,6 +154,19 @@ impl<'a> UpdateFiles<'a> {
                 })
             );
             error!("Failed to force update the ref. Error: {}", err);
+        }
+    }
+}
+
+pub trait ReferenceExt {
+    fn branch_name(&self) -> String;
+}
+
+impl ReferenceExt for Reference {
+    fn branch_name(&self) -> String {
+        match self {
+            Reference::Branch(branch) => branch.to_owned(),
+            Reference::Tag(_) => String::new(),
         }
     }
 }

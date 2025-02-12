@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    common::{File, UpdateFiles},
+    common::{File, ReferenceExt, UpdateFiles},
     config::PackageManager,
     webhook::{generate_gh_from_event, get_config},
 };
@@ -278,7 +278,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             // Get the latest commit in default branch
                             let Ok(commits) = repos
                                 .list_commits()
-                                .branch(config.default_branch)
+                                .branch(&config.default_branch)
                                 .send()
                                 .await
                             else {
@@ -287,19 +287,54 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             };
                             let latest_commit_sha = &commits.items[0].sha;
 
+                            let branch = Reference::Branch(format!(
+                                "release-butler/{}@{}",
+                                package, version
+                            ));
+
                             let updated_files = UpdateFiles::new(
                                 &gh,
                                 updated_files,
-                                Reference::Branch(format!(
-                                    "release-butler/{}@{}",
-                                    package, version
-                                )),
+                                &branch,
                                 format!("chore: RELEASE {}", version),
                             );
 
                             updated_files
                                 .execute(self.repository.0, self.repository.1, latest_commit_sha)
                                 .await;
+
+                            // Check if PR is already opened
+                            let pulls = gh.pulls(self.repository.0, self.repository.1);
+                            let is_pull_already_there = match pulls
+                                .list()
+                                .base(&config.default_branch)
+                                .head(branch.branch_name())
+                                .state(octocrab::params::State::Open)
+                                .send()
+                                .await
+                            {
+                                Ok(mut res) => {
+                                    let items = res.take_items();
+                                    !items.is_empty()
+                                }
+                                Err(_) => true,
+                            };
+
+                            if !is_pull_already_there {
+                                if let Err(err) = pulls
+                                    .create(
+                                        format!("RELEASE {}@{}", package, version),
+                                        branch.branch_name(),
+                                        &config.default_branch,
+                                    )
+                                    .maintainer_can_modify(true)
+                                    .body(format!("Fixes #{}", issues.issue.number))
+                                    .send()
+                                    .await
+                                {
+                                    error!("Failed to create a pull request. Error: {}", err);
+                                }
+                            }
                         }
 
                         // TODO: Open a PR, if not opened already
