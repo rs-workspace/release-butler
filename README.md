@@ -2,6 +2,8 @@
 
 Release Butler is a GitHub App that automates the process of creating pull requests for version bumps and changelogs based on issues with a specific label. When the pull request is merged, it can also create a tag and GitHub release.
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/gJtMNcaxnDw?si=ctR0EkgrCpogKGmq" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 ## Features
 
 - Listens to issues created with a `release-butler` label.
@@ -39,6 +41,11 @@ regarding every field.
 
 3. Release Butler will create a pull request with the version bump to `v1.2.3` and the provided changelog.
 4. Merge the pull request to complete the release process.
+
+## Languages Supported
+
+Currently, only rust is supported and we are planning to add support for numerous other languages/package manager 
+support. If you are interested, please communicate with the maintainers (via issues) before contributing.
 
 ## License
 
