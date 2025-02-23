@@ -197,7 +197,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                 // Modify the files and create a commit
                 let repos = gh.repos(self.repository.0, self.repository.1);
                 match package_information.package_manager {
-                    PackageManager::Cargo => {
+                    PackageManager::Cargo | PackageManager::CargoWorkspace => {
                         let path = PathBuf::from(&package_information.path).join("Cargo.toml");
                         let Some(path_str) = path.to_str() else {
                             error!("Failed to convert path to absolute path of `Cargo.toml`");
@@ -261,8 +261,12 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                 error!("Failed to parse `Cargo.toml`");
                                 return Ok(HttpResponse::Ok().finish());
                             };
-                            // TODO: Make it also work with workspace versions
-                            doc["package"]["version"] = toml_edit::value(version.to_string());
+
+                            let version_key = match package_information.package_manager {
+                                PackageManager::CargoWorkspace => "workspace.package.version",
+                                _ => "package.version",
+                            };
+                            doc[version_key] = toml_edit::value(version.to_string());
 
                             updated_files.push(File {
                                 name: file_.name,

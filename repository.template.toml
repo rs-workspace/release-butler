@@ -38,4 +38,5 @@ create_gh_release = true
 # The package manager used by this package.
 # Supported values:
 # - cargo
+# - cargo_workspace
 package_manager = "cargo"
