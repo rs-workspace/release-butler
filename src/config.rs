@@ -53,8 +53,7 @@ pub struct Package {
 #[serde(rename_all = "snake_case")]
 pub enum PackageManager {
     Cargo,
-    CargoWorkspace
-    // TODO: Support for more package manager
+    CargoWorkspace, // TODO: Support for more package manager
 }
 
 mod defaults {
