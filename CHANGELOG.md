@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.3] - 2025-03-12
+### Fixed
+- creating `package.version` instead of `[package][version]` [#13](https://github.com/rs-workspace/release-butler/issues/13)
+
 ## [0.1.2] - 2025-02-23
 ### Added
 
