@@ -266,7 +266,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                 PackageManager::CargoWorkspace => "workspace.package",
                                 _ => "package",
                             };
-                            doc[version_key]["package"] = toml_edit::value(version.to_string());
+                            doc[version_key]["version"] = toml_edit::value(version.to_string());
 
                             updated_files.push(File {
                                 name: file_.name,
