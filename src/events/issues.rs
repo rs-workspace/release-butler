@@ -263,10 +263,10 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             };
 
                             let version_key = match package_information.package_manager {
-                                PackageManager::CargoWorkspace => "workspace.package.version",
-                                _ => "package.version",
+                                PackageManager::CargoWorkspace => "workspace.package",
+                                _ => "package",
                             };
-                            doc[version_key] = toml_edit::value(version.to_string());
+                            doc[version_key]["package"] = toml_edit::value(version.to_string());
 
                             updated_files.push(File {
                                 name: file_.name,
