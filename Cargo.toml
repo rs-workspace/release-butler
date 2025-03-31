@@ -8,7 +8,7 @@ authors = ["Aditya Kumar <git@adityais.dev>"]
 tests = ["dep:actix-http"]
 
 [dependencies]
-octocrab = "0.43"
+octocrab = "0.44"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 derive_more = { version = "2", features = ["error", "display"] }
 actix-web = "4"
