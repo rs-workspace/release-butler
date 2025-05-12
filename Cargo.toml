@@ -13,7 +13,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 derive_more = { version = "2", features = ["error", "display"] }
 actix-web = "4"
 actix-http = { version = "3.9", optional = true }
-shuttle-actix-web = "0.52"
+shuttle-actix-web = "0.54"
 shuttle-runtime = "0.52"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
