@@ -415,7 +415,10 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                                         .iter()
                                         .any(|pr| pr.head.ref_field == branch.branch_name())
                                 }
-                                Err(_) => true,
+                                Err(err) => {
+                                    error!("{}", err);
+                                    true
+                                }
                             };
 
                             if !is_pull_already_there {
