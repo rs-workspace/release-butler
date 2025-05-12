@@ -120,7 +120,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                         .await
                     {
                         error!(
-                            "Failed to create comment on issue #{} in {}/{} regarding unauthorized issue author. Error: {}", 
+                            "Failed to create comment on issue #{} in {}/{} regarding unauthorized issue author. Error: {}",
                             issues.issue.number,
                             self.repository.0,
                             self.repository.1, err
@@ -154,7 +154,7 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                         )
                         .await {
                             error!(
-                                "Failed to create comment on issue #{} in {}/{} regarding package name not specified. Error: {}", 
+                                "Failed to create comment on issue #{} in {}/{} regarding package name not specified. Error: {}",
                                 issues.issue.number,
                                 self.repository.0,
                                 self.repository.1, err
@@ -405,14 +405,15 @@ impl<'a> Handler<'a> for IssuesHandler<'a> {
                             let is_pull_already_there = match pulls
                                 .list()
                                 .base(&config.default_branch)
-                                .head(branch.branch_name())
                                 .state(octocrab::params::State::Open)
                                 .send()
                                 .await
                             {
                                 Ok(mut res) => {
                                     let items = res.take_items();
-                                    !items.is_empty()
+                                    items
+                                        .iter()
+                                        .any(|pr| pr.head.ref_field == branch.branch_name())
                                 }
                                 Err(_) => true,
                             };
