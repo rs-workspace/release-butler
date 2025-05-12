@@ -61,7 +61,7 @@ impl ResponseError for WebhookError {
             WebhookError::MalformatedBody { .. } => StatusCode::BAD_REQUEST,
             WebhookError::InvalidSignature => StatusCode::UNAUTHORIZED,
             WebhookError::SerializationFailed => StatusCode::INTERNAL_SERVER_ERROR,
-            WebhookError::UnsupportedEvent { .. } => StatusCode::NOT_IMPLEMENTED,
+            WebhookError::UnsupportedEvent => StatusCode::NOT_IMPLEMENTED,
             WebhookError::InvalidEncodingOrLength => StatusCode::BAD_REQUEST,
         }
     }
